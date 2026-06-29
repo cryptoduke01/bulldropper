@@ -24,6 +24,8 @@ import {
   uiToRaw,
 } from "@/lib/airdrop/build-tx";
 import { compactNumber, shortAddress } from "@/lib/format";
+import { submitAsJitoBundles, sendRawWithConfirm } from "@/lib/airdrop/jito";
+import bs58 from "bs58";
 
 type SendStatus = "idle" | "preparing" | "signing" | "sending" | "done" | "error";
 
@@ -112,6 +114,9 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
   const [sendStatus, setSendStatus] = useState<SendStatus>("idle");
   const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
+
+  // Jito bundles give better landing probability + atomic groups during congestion
+  const [useJito, setUseJito] = useState(true);
 
   // Fetch mint info when CA is pasted
   useEffect(() => {
@@ -225,32 +230,96 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
         : await Promise.all(txs.map((t) => signTransaction!(t)));
 
       setSendStatus("sending");
-      for (let i = 0; i < signed.length; i++) {
-        const tx = signed[i];
-        if (!tx) continue;
+
+      // Pre-compute signatures from the signed tx objects (they are already signed)
+      const precomputedSigs: string[] = signed.map((tx) => {
+        const sig = tx?.signature;
+        if (!sig) return "";
+        const bytes = sig instanceof Uint8Array ? sig : Buffer.from(sig as any);
         try {
-          const raw = tx.serialize();
-          const sig = await connection.sendRawTransaction(raw, {
-            skipPreflight: false,
-            maxRetries: 3,
-          });
-          await connection.confirmTransaction(
-            { signature: sig, blockhash, lastValidBlockHeight },
-            "confirmed",
-          );
-          setBatchResults((prev) =>
-            prev.map((b) => (b.index === i ? { ...b, signature: sig, status: "sent" } : b)),
-          );
-        } catch (e) {
-          setBatchResults((prev) =>
-            prev.map((b) =>
-              b.index === i
-                ? { ...b, status: "failed", error: e instanceof Error ? e.message : String(e) }
-                : b,
-            ),
-          );
+          return bs58.encode(bytes);
+        } catch {
+          return "";
+        }
+      });
+
+      if (useJito) {
+        try {
+          const bundleGroups = await submitAsJitoBundles(signed);
+          // Map bundle results back to per-batch UI using precomputed sigs
+          let sigIndex = 0;
+          for (const group of bundleGroups) {
+            for (let k = 0; k < group.signatures.length; k++) {
+              const globalIdx = sigIndex + k;
+              const sig = group.signatures[k] || precomputedSigs[globalIdx] || "";
+              setBatchResults((prev) =>
+                prev.map((b) =>
+                  b.index === globalIdx
+                    ? {
+                        ...b,
+                        signature: sig,
+                        status: "sent" as const,
+                      }
+                    : b
+                )
+              );
+            }
+            sigIndex += group.signatures.length;
+          }
+        } catch (jitoErr) {
+          // Fallback to normal send if Jito has a hiccup
+          console.warn("Jito bundle failed, falling back to RPC send:", jitoErr);
+          for (let i = 0; i < signed.length; i++) {
+            const tx = signed[i];
+            if (!tx) continue;
+            try {
+              const sig = await sendRawWithConfirm(
+                connection,
+                tx,
+                blockhash,
+                lastValidBlockHeight
+              );
+              setBatchResults((prev) =>
+                prev.map((b) => (b.index === i ? { ...b, signature: sig, status: "sent" } : b)),
+              );
+            } catch (e) {
+              setBatchResults((prev) =>
+                prev.map((b) =>
+                  b.index === i
+                    ? { ...b, status: "failed", error: e instanceof Error ? e.message : String(e) }
+                    : b,
+                ),
+              );
+            }
+          }
+        }
+      } else {
+        // Classic path (regular RPC)
+        for (let i = 0; i < signed.length; i++) {
+          const tx = signed[i];
+          if (!tx) continue;
+          try {
+            const sig = await sendRawWithConfirm(
+              connection,
+              tx,
+              blockhash,
+              lastValidBlockHeight
+            );
+            setBatchResults((prev) =>
+              prev.map((b) => (b.index === i ? { ...b, signature: sig, status: "sent" } : b)),
+            );
+          } catch (e) {
+            setBatchResults((prev) =>
+              prev.map((b) =>
+                b.index === i
+                  ? { ...b, status: "failed", error: e instanceof Error ? e.message : String(e) }
+                  : b,
+              ),
+            );
+          }
         }
       }
+
       setSendStatus("done");
     } catch (e) {
       setSendStatus("error");
@@ -419,6 +488,15 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
               <span className="tabular text-[color:var(--color-fg)]">{recipients.length}</span> recipients
               <span className="mx-2 text-[color:var(--color-fg-dim)]">·</span>
               <span className="tabular">{Math.ceil(recipients.length / 5)}</span> tx batches
+              <label className="ml-3 inline-flex items-center gap-1.5 text-[11px] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={useJito}
+                  onChange={(e) => setUseJito(e.target.checked)}
+                  className="accent-[color:var(--color-accent)]"
+                />
+                <span>Jito bundles (faster landing)</span>
+              </label>
             </>
           )}
           {sendStatus === "preparing" && "Preparing transactions…"}
@@ -434,12 +512,14 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
                   {failed} failed
                 </span>
               )}
+              {useJito && <span className="ml-2 text-[10px] uppercase tracking-widest text-[color:var(--color-accent)]">via Jito</span>}
             </>
           )}
           {sendStatus === "done" && (
             <>
               <span className="text-[color:var(--color-success)]">✓ done</span>{" "}
               {sent}/{batchResults.length} batches landed
+              {useJito && <span className="ml-1 text-[10px] text-[color:var(--color-accent)]">via Jito bundles</span>}
             </>
           )}
           {sendStatus === "error" && (

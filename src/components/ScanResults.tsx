@@ -18,6 +18,9 @@ export function ScanResults({ ticker, hours }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
 
+  // Filter + preference selection (friends request: filtered feed of tweets + random option)
+  const [filterText, setFilterText] = useState("");
+
   useEffect(() => {
     let cancelled = false;
     setData(null);
@@ -57,6 +60,18 @@ export function ScanResults({ ticker, hours }: Props) {
   }
 
   const eligible = data.authors.filter((a) => a.wallet !== null);
+
+  // Filtered view of the tweet feed for preference-based selection
+  const filteredAuthors = data.authors.filter((a) => {
+    if (!filterText) return true;
+    const q = filterText.toLowerCase();
+    return (
+      a.handle.toLowerCase().includes(q) ||
+      (a.name || "").toLowerCase().includes(q) ||
+      a.bestTweet.text.toLowerCase().includes(q)
+    );
+  });
+
   const toggleAll = () => {
     if (selected.size === eligible.length) {
       setSelected(new Set());
@@ -65,25 +80,61 @@ export function ScanResults({ ticker, hours }: Props) {
     }
   };
 
+  function selectRandom(count: number) {
+    const pool = filteredAuthors.filter((a) => a.wallet !== null);
+    if (pool.length === 0) return;
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    const picks = shuffled.slice(0, Math.min(count, shuffled.length));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      picks.forEach((p) => next.add(p.handle));
+      return next;
+    });
+  }
+
+  function selectTop(count: number) {
+    const pool = filteredAuthors.filter((a) => a.wallet !== null);
+    const picks = pool.slice(0, count); // already sorted by score
+    setSelected((prev) => {
+      const next = new Set(prev);
+      picks.forEach((p) => next.add(p.handle));
+      return next;
+    });
+  }
+
   return (
     <div className="space-y-6">
       <StatBar stats={data.stats} label={data.label} hours={data.hours} />
 
+      {/* Filtered tweet feed + quick random / preference selection (from your friends) */}
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev)] px-4 py-3">
+        <input
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+          placeholder="Filter feed (handle, name, or tweet text)…"
+          className="flex-1 min-w-[220px] rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev-2)] px-3 py-1.5 text-sm outline-none placeholder:text-[color:var(--color-fg-dim)]"
+        />
+        <button onClick={() => selectRandom(5)} className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[11px] hover:border-[color:var(--color-border-strong)]">random 5</button>
+        <button onClick={() => selectRandom(10)} className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[11px] hover:border-[color:var(--color-border-strong)]">random 10</button>
+        <button onClick={() => selectTop(10)} className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[11px] hover:border-[color:var(--color-border-strong)]">top 10</button>
+        <button onClick={() => setSelected(new Set())} className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[11px] hover:border-[color:var(--color-border-strong)]">clear</button>
+        <button
+          onClick={toggleAll}
+          className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[11px] font-medium hover:border-[color:var(--color-border-strong)]"
+        >
+          {selected.size === eligible.length ? "deselect all" : "select all w/ wallet"}
+        </button>
+      </div>
+
       <div className="overflow-hidden rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev)]">
         <div className="flex items-center justify-between border-b border-[color:var(--color-border)] px-5 py-3">
           <div className="text-[12px] font-medium uppercase tracking-[0.14em] text-[color:var(--color-fg-dim)]">
-            Top {data.authors.length} viral posters
+            {filterText ? "Filtered feed" : "Top"} {filteredAuthors.length} viral posters
           </div>
-          <button
-            onClick={toggleAll}
-            className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[11px] font-medium text-[color:var(--color-fg-muted)] transition hover:border-[color:var(--color-border-strong)] hover:text-[color:var(--color-fg)]"
-          >
-            {selected.size === eligible.length ? "deselect all" : "select all with wallet"}
-          </button>
         </div>
 
         <ul className="divide-y divide-[color:var(--color-border)]">
-          {data.authors.map((a, i) => (
+          {filteredAuthors.map((a, i) => (
             <AuthorRow
               key={a.handle}
               rank={i + 1}
