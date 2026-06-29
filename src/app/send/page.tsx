@@ -98,6 +98,8 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
   const [mintError, setMintError] = useState<string | null>(null);
   const [mintLoading, setMintLoading] = useState(false);
 
+  const [tokenMeta, setTokenMeta] = useState<{ symbol: string; name: string; priceUsd?: number } | null>(null);
+
   const [balanceUi, setBalanceUi] = useState<number | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
 
@@ -123,16 +125,20 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
     if (!mintInput || !isValidPubkey(mintInput.trim())) {
       setMintInfo(null);
       setMintError(null);
+      setTokenMeta(null);
       return;
     }
     let cancelled = false;
     setMintLoading(true);
     setMintError(null);
+    setTokenMeta(null);
     const mint = new PublicKey(mintInput.trim());
+    const mintStr = mint.toBase58();
+
     getMint(connection, mint)
       .then((info) => {
         if (cancelled) return;
-        setMintInfo({ decimals: info.decimals, address: mint.toBase58() });
+        setMintInfo({ decimals: info.decimals, address: mintStr });
       })
       .catch((e) => {
         if (cancelled) return;
@@ -140,6 +146,19 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
         setMintError(e instanceof Error ? e.message : "Failed to load mint");
       })
       .finally(() => !cancelled && setMintLoading(false));
+
+    // Fetch human readable details + price (Jupiter)
+    Promise.all([
+      fetch(`https://tokens.jup.ag/token/${mintStr}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`https://price.jup.ag/v6/price?ids=${mintStr}`).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([tokenData, priceData]) => {
+      if (cancelled) return;
+      const symbol = tokenData?.symbol || mintStr.slice(0, 4) + '…';
+      const name = tokenData?.name || 'Unknown token';
+      const priceUsd = priceData?.data?.[mintStr]?.price ? Number(priceData.data[mintStr].price) : undefined;
+      setTokenMeta({ symbol, name, priceUsd });
+    });
+
     return () => {
       cancelled = true;
     };
@@ -347,6 +366,11 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
             <span className="text-[16px] font-normal text-[color:var(--color-fg-muted)]">
               recipients
             </span>
+            {tokenMeta?.symbol && (
+              <span className="ml-2 text-[18px] font-normal text-[color:var(--color-fg-dim)]">
+                sending {tokenMeta.symbol}
+              </span>
+            )}
           </h1>
         </div>
         <Link
@@ -376,15 +400,29 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
           )}
           {mintInfo && (
             <div className="flex flex-wrap gap-x-6 gap-y-2 text-[12px] text-[color:var(--color-fg-muted)] tabular">
+              {tokenMeta && (
+                <span>
+                  <span className="font-mono text-[color:var(--color-fg)]">{tokenMeta.symbol}</span>
+                  {tokenMeta.name && tokenMeta.name !== 'Unknown token' && (
+                    <span className="text-[color:var(--color-fg-dim)]"> · {tokenMeta.name}</span>
+                  )}
+                  {tokenMeta.priceUsd !== undefined && (
+                    <span className="ml-1 text-[color:var(--color-fg-dim)]">(${tokenMeta.priceUsd.toFixed(6)})</span>
+                  )}
+                </span>
+              )}
               <span>
-                Decimals:{" "}
-                <span className="font-mono text-[color:var(--color-fg)]">{mintInfo.decimals}</span>
+                Decimals: <span className="font-mono text-[color:var(--color-fg)]">{mintInfo.decimals}</span>
               </span>
               <span>
                 Your balance:{" "}
                 <span className="font-mono text-[color:var(--color-fg)]">
                   {balanceLoading ? "…" : balanceUi !== null ? balanceUi.toLocaleString() : "—"}
+                  {tokenMeta?.symbol && ` ${tokenMeta.symbol}`}
                 </span>
+                {tokenMeta?.priceUsd && balanceUi !== null && (
+                  <span className="text-[color:var(--color-fg-dim)]"> (≈ ${(balanceUi * tokenMeta.priceUsd).toFixed(2)})</span>
+                )}
               </span>
             </div>
           )}
@@ -415,38 +453,56 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
               sub="Top posters get proportionally more"
             />
           </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              inputMode="decimal"
-              value={totalAmount}
-              onChange={(e) => setTotalAmount(e.target.value)}
-              placeholder="Total amount"
-              className="w-full max-w-xs rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev-2)] px-4 py-3 font-mono text-[15px] tabular text-[color:var(--color-fg)] outline-none placeholder:text-[color:var(--color-fg-dim)] focus:border-[color:var(--color-border-strong)]"
-            />
-            <span className="text-[13px] text-[color:var(--color-fg-muted)]">
-              {distMode === "equal" && totalUi > 0
-                ? `≈ ${(totalUi / recipients.length).toLocaleString(undefined, { maximumFractionDigits: 4 })} each`
-                : distMode === "weighted" && totalUi > 0
-                  ? "top → bottom, score-weighted"
-                  : ""}
-            </span>
+          <div className="space-y-1">
+            <div className="text-[12px] text-[color:var(--color-fg-muted)]">
+              Total amount to airdrop (in tokens)
+              {tokenMeta?.symbol && <span className="font-mono text-[color:var(--color-fg)]"> {tokenMeta.symbol}</span>}
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                inputMode="decimal"
+                value={totalAmount}
+                onChange={(e) => setTotalAmount(e.target.value)}
+                placeholder="Total amount"
+                className="w-full max-w-xs rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev-2)] px-4 py-3 font-mono text-[15px] tabular text-[color:var(--color-fg)] outline-none placeholder:text-[color:var(--color-fg-dim)] focus:border-[color:var(--color-border-strong)]"
+              />
+              <span className="text-[13px] text-[color:var(--color-fg-muted)]">
+                {distMode === "equal" && totalUi > 0
+                  ? `≈ ${(totalUi / recipients.length).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${tokenMeta?.symbol || 'each'}`
+                  : distMode === "weighted" && totalUi > 0
+                    ? "top → bottom, score-weighted"
+                    : ""}
+              </span>
+            </div>
+            {tokenMeta?.priceUsd && totalUi > 0 && (
+              <div className="text-[12px] text-[color:var(--color-fg-dim)] tabular">
+                ≈ ${(totalUi * tokenMeta.priceUsd).toFixed(2)} USD
+              </div>
+            )}
           </div>
           {insufficientBalance && (
             <div className="text-[12px] text-[color:var(--color-warning)]">
-              You only hold {balanceUi?.toLocaleString()} of this token. Lower the total or fund the wallet.
+              You only hold {balanceUi?.toLocaleString()} {tokenMeta?.symbol || 'tokens'}. Lower the total or fund the wallet.
             </div>
           )}
         </div>
       </Step>
 
       <Step n="03" title="Review who's getting what">
+        {tokenMeta && (
+          <div className="mb-3 text-[12px] text-[color:var(--color-fg-muted)]">
+            Airdropping <span className="font-mono text-[color:var(--color-fg)]">{tokenMeta.symbol}</span>
+            {tokenMeta.name && tokenMeta.name !== 'Unknown token' && <span> ({tokenMeta.name})</span>}
+            {tokenMeta.priceUsd !== undefined && ` · ≈ $${tokenMeta.priceUsd.toFixed(6)} per token`}
+          </div>
+        )}
         <div className="overflow-hidden rounded-xl border border-[color:var(--color-border)]">
           <ul className="max-h-[420px] divide-y divide-[color:var(--color-border)] overflow-y-auto">
             {recipients.map((r, i) => (
               <li
                 key={r.wallet}
-                className="grid grid-cols-[28px_1fr_120px_140px] items-center gap-3 px-4 py-3 text-[13px]"
+                className="grid grid-cols-[28px_1fr_120px_160px] items-center gap-3 px-4 py-3 text-[13px]"
               >
                 <div className="font-mono text-[11px] tabular text-[color:var(--color-fg-dim)]">
                   {String(i + 1).padStart(2, "0")}
@@ -473,7 +529,17 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
                   {shortAddress(r.wallet, 4, 4)}
                 </a>
                 <div className="text-right font-mono text-[12px] tabular text-[color:var(--color-fg)]">
-                  {totalUi > 0 ? (amountsUi[i] ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"}
+                  {totalUi > 0 ? (
+                    <>
+                      {(amountsUi[i] ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                      {tokenMeta?.symbol && <span className="text-[color:var(--color-fg-dim)]"> {tokenMeta.symbol}</span>}
+                      {tokenMeta?.priceUsd && (
+                        <div className="text-[10px] text-[color:var(--color-fg-dim)]">
+                          ≈ ${((amountsUi[i] ?? 0) * tokenMeta.priceUsd).toFixed(4)}
+                        </div>
+                      )}
+                    </>
+                  ) : "—"}
                 </div>
               </li>
             ))}
@@ -488,6 +554,12 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
               <span className="tabular text-[color:var(--color-fg)]">{recipients.length}</span> recipients
               <span className="mx-2 text-[color:var(--color-fg-dim)]">·</span>
               <span className="tabular">{Math.ceil(recipients.length / 5)}</span> tx batches
+              {tokenMeta?.symbol && (
+                <>
+                  <span className="mx-2 text-[color:var(--color-fg-dim)]">·</span>
+                  <span className="text-[color:var(--color-fg)]">{tokenMeta.symbol}</span>
+                </>
+              )}
               <label className="ml-3 inline-flex items-center gap-1.5 text-[11px] cursor-pointer select-none">
                 <input
                   type="checkbox"
