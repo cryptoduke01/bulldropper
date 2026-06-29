@@ -542,6 +542,48 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
               Total amount to airdrop (in tokens)
               {tokenMeta?.symbol && <span className="font-mono text-[color:var(--color-fg)]"> {tokenMeta.symbol}</span>}
             </div>
+
+            {/* Quick preset buttons for bulk airdrops */}
+            <div className="flex flex-wrap gap-1.5">
+              {/* Value-based presets (if we have a price) */}
+              {tokenMeta?.priceUsd && [100, 500, 1000, 5000].map((usd) => (
+                <button
+                  key={`usd-${usd}`}
+                  onClick={() => {
+                    if (tokenMeta.priceUsd && mintInfo) {
+                      const tokens = usd / tokenMeta.priceUsd;
+                      const fixed = tokens.toFixed(Math.min(6, mintInfo.decimals));
+                      setTotalAmount(fixed);
+                    }
+                  }}
+                  className="rounded-full border border-[color:var(--color-border)] px-2.5 py-0.5 text-[11px] text-[color:var(--color-fg-muted)] hover:border-[color:var(--color-border-strong)] hover:text-[color:var(--color-fg)] transition"
+                >
+                  ${usd}
+                </button>
+              ))}
+
+              {/* Token count presets */}
+              {[1000, 5000, 10000, 27000].map((amt) => (
+                <button
+                  key={`tok-${amt}`}
+                  onClick={() => setTotalAmount(amt.toString())}
+                  className="rounded-full border border-[color:var(--color-border)] px-2.5 py-0.5 text-[11px] text-[color:var(--color-fg-muted)] hover:border-[color:var(--color-border-strong)] hover:text-[color:var(--color-fg)] transition"
+                >
+                  {amt.toLocaleString()}
+                </button>
+              ))}
+
+              {/* Max button */}
+              {balanceUi != null && balanceUi > 0 && (
+                <button
+                  onClick={() => setTotalAmount(balanceUi.toFixed(Math.min(6, mintInfo?.decimals || 6)))}
+                  className="rounded-full border border-[color:var(--color-border)] px-2.5 py-0.5 text-[11px] text-[color:var(--color-accent)] hover:border-[color:var(--color-border-strong)] transition"
+                >
+                  Max
+                </button>
+              )}
+            </div>
+
             <div className="flex items-center gap-3">
               <input
                 type="number"
