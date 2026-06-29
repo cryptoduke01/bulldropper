@@ -10,6 +10,12 @@ export function Nav({ showConnect = true }: { showConnect?: boolean }) {
           <Logo />
         </Link>
         <nav className="flex items-center gap-2 text-[13px] text-[color:var(--color-fg-muted)]">
+          <Link
+            href="/board/ANSEM"
+            className="hidden sm:inline-flex items-center rounded-full border border-[color:var(--color-border)] px-3 py-1.5 transition hover:border-[color:var(--color-border-strong)] hover:text-[color:var(--color-fg)]"
+          >
+            Boards
+          </Link>
           <a
             href="https://x.com/blknoiz06/status/2071349876256887063"
             target="_blank"

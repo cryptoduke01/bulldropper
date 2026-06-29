@@ -13,6 +13,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@netlify/blobs": "^10.7.9",
     "@solana/spl-token": "^0.4.9",
     "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/wallet-adapter-react": "^0.15.35",
@@ -24,6 +25,7 @@
     "next": "15.5.9",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "tweetnacl": "^1.0.3",
     "undici": "^6.20.1",
     "zod": "^3.23.8"
   },

@@ -36,6 +36,29 @@ export default function Home() {
           <CashtagInput autoFocus />
         </div>
 
+        {/* Trending live boards */}
+        <div className="mt-8">
+          <div className="text-[11px] uppercase tracking-[0.14em] text-[color:var(--color-fg-dim)] mb-2">Live boards</div>
+          <div className="flex flex-wrap gap-3 text-sm">
+            {[
+              { t: "ANSEM", imp: "1.2M" },
+              { t: "WIF", imp: "840K" },
+              { t: "PNUT", imp: "410K" },
+            ].map((b) => (
+              <a
+                key={b.t}
+                href={`/board/${b.t}`}
+                className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev)] px-4 py-2 hover:border-[color:var(--color-border-strong)]"
+              >
+                <span className="font-mono text-[color:var(--color-accent)]">${b.t}</span>
+                <span className="text-[color:var(--color-fg-muted)]">• {b.imp} impressions</span>
+                <span className="text-[10px] text-[color:var(--color-fg-dim)]">→</span>
+              </a>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-[color:var(--color-fg-dim)]">Real-time virality boards. Click to view or claim your spot.</p>
+        </div>
+
         <div className="mt-20 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-border)] sm:grid-cols-3">
           {STATS.map((s) => (
             <div

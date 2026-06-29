@@ -4,6 +4,7 @@ import { loadEnv } from "@/lib/util/env";
 import { searchTweets } from "@/lib/twitter/client";
 import { rankAuthors } from "@/lib/scan-engine/rank";
 import { isValidSolanaAddress } from "@/lib/wallet/extract";
+import { getClaimedWallet } from "@/lib/claims";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -77,6 +78,16 @@ export async function GET(request: Request) {
       ? all.filter((r) => !exclude.has(r.author.userName.toLowerCase()))
       : all;
     const ranked = filtered.slice(0, top);
+
+    // Fill in claimed wallets (for leaderboard / future airdrops)
+    for (const r of ranked) {
+      if (!r.wallet) {
+        const claimed = await getClaimedWallet(r.author.userName);
+        if (claimed) {
+          (r as any).wallet = { address: claimed, source: 'claim' };
+        }
+      }
+    }
 
     return NextResponse.json({
       label,
