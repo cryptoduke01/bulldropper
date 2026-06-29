@@ -202,7 +202,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
         mint,
         decimals: mintInfo.decimals,
         targets,
-        priorityMicroLamports: 50_000,
+        priorityMicroLamports: 150_000, // bump for mainnet landing; tune higher during congestion
       });
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
