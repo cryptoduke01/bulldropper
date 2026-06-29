@@ -13,6 +13,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     () => process.env.NEXT_PUBLIC_SOLANA_RPC ?? clusterApiUrl("mainnet-beta"),
     [],
   );
+  // For production airdrops use a reliable RPC (Helius, QuickNode, etc.) via NEXT_PUBLIC_SOLANA_RPC
   const wallets = useMemo(
     () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
     [],
