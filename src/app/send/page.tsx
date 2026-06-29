@@ -8,6 +8,7 @@ import {
   getMint,
   getAccount,
   TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
 import {
   PublicKey,
@@ -95,7 +96,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
   const { publicKey, signAllTransactions, signTransaction, connected } = useWallet();
 
   const [mintInput, setMintInput] = useState("");
-  const [mintInfo, setMintInfo] = useState<{ decimals: number; address: string } | null>(null);
+  const [mintInfo, setMintInfo] = useState<{ decimals: number; address: string; programId?: string } | null>(null);
   const [mintError, setMintError] = useState<string | null>(null);
   const [mintLoading, setMintLoading] = useState(false);
 
@@ -143,17 +144,35 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
     const mint = new PublicKey(mintInput.trim());
     const mintStr = mint.toBase58();
 
-    getMint(connection, mint)
-      .then((info) => {
-        if (cancelled) return;
-        setMintInfo({ decimals: info.decimals, address: mintStr });
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setMintInfo(null);
-        setMintError(e instanceof Error ? e.message : "Failed to load mint");
-      })
-      .finally(() => !cancelled && setMintLoading(false));
+    // Determine if it's Token-2022 or legacy, then getMint
+    connection.getAccountInfo(mint).then((acc) => {
+      const tokenProgramId = (acc && acc.owner.equals(TOKEN_2022_PROGRAM_ID)) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+
+      getMint(connection, mint, undefined, tokenProgramId)
+        .then((info) => {
+          if (cancelled) return;
+          setMintInfo({ decimals: info.decimals, address: mintStr, programId: tokenProgramId.toBase58() });
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          setMintInfo(null);
+          setMintError(e instanceof Error ? e.message : "Failed to load mint");
+        })
+        .finally(() => !cancelled && setMintLoading(false));
+    }).catch(() => {
+      // fallback to legacy
+      getMint(connection, mint)
+        .then((info) => {
+          if (cancelled) return;
+          setMintInfo({ decimals: info.decimals, address: mintStr });
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          setMintInfo(null);
+          setMintError(e instanceof Error ? e.message : "Failed to load mint");
+        })
+        .finally(() => !cancelled && setMintLoading(false));
+    });
 
     // Fetch human readable details + price (Jupiter)
     Promise.all([
@@ -181,7 +200,8 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
     let cancelled = false;
     setBalanceLoading(true);
     const mint = new PublicKey(mintInfo.address);
-    const ata = getAssociatedTokenAddressSync(mint, publicKey);
+    const programId = mintInfo.programId ? new PublicKey(mintInfo.programId) : TOKEN_PROGRAM_ID;
+    const ata = getAssociatedTokenAddressSync(mint, publicKey, false, programId);
     getAccount(connection, ata)
       .then((acct) => {
         if (cancelled) return;
@@ -193,6 +213,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
   }, [publicKey, mintInfo, connection]);
 
   // Fetch tokens held in the connected wallet (for easy selection)
+  // Support both legacy Token and Token-2022
   useEffect(() => {
     if (!publicKey) {
       setUserTokens([]);
@@ -200,16 +221,18 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
     }
     let cancelled = false;
     setLoadingUserTokens(true);
-    connection
-      .getParsedTokenAccountsByOwner(publicKey, {
-        programId: TOKEN_PROGRAM_ID,
-      })
-      .then(({ value }) => {
+
+    Promise.all([
+      connection.getParsedTokenAccountsByOwner(publicKey, { programId: TOKEN_PROGRAM_ID }),
+      connection.getParsedTokenAccountsByOwner(publicKey, { programId: TOKEN_2022_PROGRAM_ID }),
+    ])
+      .then(([legacy, t22]) => {
         if (cancelled) return;
-        const held = value
+        const all = [...legacy.value, ...t22.value];
+        const held = all
           .map((acc) => {
             const info = acc.account.data.parsed.info;
-            const uiAmount = info.tokenAmount.uiAmount || 0;
+            const uiAmount = info.tokenAmount.uiAmount != null ? info.tokenAmount.uiAmount : parseFloat(info.tokenAmount.uiAmountString || '0');
             if (uiAmount <= 0) return null;
             return {
               mint: info.mint,
@@ -218,7 +241,10 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
             };
           })
           .filter((t): t is any => !!t);
-        setUserTokens(held);
+        // dedupe by mint and sort by balance desc
+        const unique = Array.from(new Map(held.map(t => [t.mint, t])).values())
+          .sort((a, b) => b.balanceUi - a.balanceUi);
+        setUserTokens(unique);
       })
       .catch((e) => {
         console.error("Failed to load wallet tokens:", e);
@@ -256,7 +282,8 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
       setSendError(null);
       setSendStatus("preparing");
       const mint = new PublicKey(mintInfo.address);
-      const payerAta = getAssociatedTokenAddressSync(mint, publicKey);
+      const programId = mintInfo.programId ? new PublicKey(mintInfo.programId) : TOKEN_PROGRAM_ID;
+      const payerAta = getAssociatedTokenAddressSync(mint, publicKey, false, programId);
 
       const targets = recipients.map((r, i) => ({
         recipient: new PublicKey(r.wallet),
@@ -274,6 +301,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
         decimals: mintInfo.decimals,
         targets,
         priorityMicroLamports: 150_000, // bump for mainnet landing; tune higher during congestion
+        programId,
       });
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");

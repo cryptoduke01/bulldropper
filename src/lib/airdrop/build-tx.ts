@@ -7,6 +7,7 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 
 export interface AirdropTarget {
@@ -25,8 +26,9 @@ export function buildAirdropBatches(args: {
   targets: AirdropTarget[];
   batchSize?: number;
   priorityMicroLamports?: number;
+  programId?: PublicKey;
 }): TransactionInstruction[][] {
-  const { payer, payerAta, mint, decimals, targets, batchSize = DEFAULT_BATCH_SIZE, priorityMicroLamports } = args;
+  const { payer, payerAta, mint, decimals, targets, batchSize = DEFAULT_BATCH_SIZE, priorityMicroLamports, programId = TOKEN_PROGRAM_ID } = args;
 
   const batches: TransactionInstruction[][] = [];
 
@@ -41,9 +43,9 @@ export function buildAirdropBatches(args: {
       );
     }
     for (const target of slice) {
-      const ata = getAssociatedTokenAddressSync(mint, target.recipient);
+      const ata = getAssociatedTokenAddressSync(mint, target.recipient, false, programId);
       ixs.push(
-        createAssociatedTokenAccountIdempotentInstruction(payer, ata, target.recipient, mint),
+        createAssociatedTokenAccountIdempotentInstruction(payer, ata, target.recipient, mint, programId),
       );
       ixs.push(
         createTransferCheckedInstruction(
