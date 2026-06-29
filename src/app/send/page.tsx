@@ -106,6 +106,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
     mint: string;
     balanceUi: number;
     decimals: number;
+    tokenAccount?: string;
   }>>([]);
   const [loadingUserTokens, setLoadingUserTokens] = useState(false);
 
@@ -121,6 +122,10 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
     () => computeAmountsUi(recipients, totalUi, distMode),
     [recipients, totalUi, distMode],
   );
+
+  const currentMint = mintInfo?.address;
+  const heldForMint = useMemo(() => userTokens.find(t => t.mint === currentMint), [userTokens, currentMint]);
+  const effectiveBalanceUi = heldForMint ? heldForMint.balanceUi : balanceUi;
 
   const [sendStatus, setSendStatus] = useState<SendStatus>("idle");
   const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
@@ -202,7 +207,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
     const mint = new PublicKey(mintInfo.address);
     const programId = mintInfo.programId ? new PublicKey(mintInfo.programId) : TOKEN_PROGRAM_ID;
     const ata = getAssociatedTokenAddressSync(mint, publicKey, false, programId);
-    getAccount(connection, ata)
+    getAccount(connection, ata, undefined, programId)
       .then((acct) => {
         if (cancelled) return;
         const ui = Number(acct.amount) / 10 ** mintInfo.decimals;
@@ -229,22 +234,25 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
       .then(([legacy, t22]) => {
         if (cancelled) return;
         const all = [...legacy.value, ...t22.value];
-        const held = all
-          .map((acc) => {
-            const info = acc.account.data.parsed.info;
-            const uiAmount = info.tokenAmount.uiAmount != null ? info.tokenAmount.uiAmount : parseFloat(info.tokenAmount.uiAmountString || '0');
-            if (uiAmount <= 0) return null;
-            return {
-              mint: info.mint,
-              balanceUi: uiAmount,
-              decimals: info.tokenAmount.decimals,
-            };
-          })
-          .filter((t): t is any => !!t);
-        // dedupe by mint and sort by balance desc
-        const unique = Array.from(new Map(held.map(t => [t.mint, t])).values())
-          .sort((a, b) => b.balanceUi - a.balanceUi);
-        setUserTokens(unique);
+        const heldMap = new Map<string, {mint: string; balanceUi: number; decimals: number; tokenAccount: string}>();
+        all.forEach((acc) => {
+          const info = acc.account.data.parsed.info;
+          const uiAmount = info.tokenAmount.uiAmount != null ? info.tokenAmount.uiAmount : parseFloat(info.tokenAmount.uiAmountString || '0');
+          if (uiAmount <= 0) return;
+          const mint = info.mint;
+          const existing = heldMap.get(mint);
+          const newBalance = (existing?.balanceUi || 0) + uiAmount;
+          const thisAccount = acc.pubkey.toBase58();
+          const useThisAccount = !existing || uiAmount > (existing.balanceUi || 0);
+          heldMap.set(mint, {
+            mint,
+            balanceUi: newBalance,
+            decimals: info.tokenAmount.decimals,
+            tokenAccount: useThisAccount ? thisAccount : existing!.tokenAccount,
+          });
+        });
+        const held = Array.from(heldMap.values()).sort((a, b) => b.balanceUi - a.balanceUi);
+        setUserTokens(held);
       })
       .catch((e) => {
         console.error("Failed to load wallet tokens:", e);
@@ -256,7 +264,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
   }, [publicKey, connection]);
 
   const insufficientBalance =
-    balanceUi !== null && totalUi > 0 && balanceUi < totalUi;
+    effectiveBalanceUi !== null && totalUi > 0 && effectiveBalanceUi < totalUi;
 
   const canSend =
     connected &&
@@ -283,7 +291,12 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
       setSendStatus("preparing");
       const mint = new PublicKey(mintInfo.address);
       const programId = mintInfo.programId ? new PublicKey(mintInfo.programId) : TOKEN_PROGRAM_ID;
-      const payerAta = getAssociatedTokenAddressSync(mint, publicKey, false, programId);
+      let payerAta: PublicKey;
+      if (heldForMint?.tokenAccount) {
+        payerAta = new PublicKey(heldForMint.tokenAccount);
+      } else {
+        payerAta = getAssociatedTokenAddressSync(mint, publicKey, false, programId);
+      }
 
       const targets = recipients.map((r, i) => ({
         recipient: new PublicKey(r.wallet),
@@ -529,11 +542,11 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
               <span>
                 Your balance:{" "}
                 <span className="font-mono text-[color:var(--color-fg)]">
-                  {balanceLoading ? "…" : balanceUi !== null ? balanceUi.toLocaleString() : "—"}
+                  {balanceLoading && !heldForMint ? "…" : (effectiveBalanceUi !== null ? effectiveBalanceUi.toLocaleString() : "—")}
                   {tokenMeta?.symbol && ` ${tokenMeta.symbol}`}
                 </span>
-                {tokenMeta?.priceUsd && balanceUi !== null && (
-                  <span className="text-[color:var(--color-fg-dim)]"> (≈ ${(balanceUi * tokenMeta.priceUsd).toFixed(2)})</span>
+                {tokenMeta?.priceUsd && effectiveBalanceUi !== null && (
+                  <span className="text-[color:var(--color-fg-dim)]"> (≈ ${(effectiveBalanceUi * tokenMeta.priceUsd).toFixed(2)})</span>
                 )}
               </span>
             </div>
@@ -637,7 +650,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
           </div>
           {insufficientBalance && (
             <div className="text-[12px] text-[color:var(--color-warning)]">
-              You only hold {balanceUi?.toLocaleString()} {tokenMeta?.symbol || 'tokens'}. Lower the total or fund the wallet.
+              You only hold {effectiveBalanceUi?.toLocaleString() || 0} {tokenMeta?.symbol || 'tokens'}. Lower the total or fund the wallet.
             </div>
           )}
         </div>
@@ -713,7 +726,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
               : totalUi <= 0
               ? "total amount must be greater than 0"
               : insufficientBalance
-              ? `insufficient balance (you hold ${balanceUi?.toFixed(4) || 0} but entered ${totalUi})`
+              ? `insufficient balance (you hold ${effectiveBalanceUi?.toFixed(4) || 0} but entered ${totalUi})`
               : recipients.length === 0
               ? "no recipients selected"
               : "one of the required fields is missing"
