@@ -711,6 +711,14 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
               </li>
             ))}
           </ul>
+
+          {/* Total summary */}
+          {totalUi > 0 && tokenMeta && (
+            <div className="mt-3 text-right text-[13px] text-[color:var(--color-fg-muted)]">
+              Total: <span className="font-mono text-[color:var(--color-fg)]">{totalUi.toLocaleString()}</span> {tokenMeta.symbol}
+              {tokenMeta.priceUsd && <span className="ml-2">≈ ${(totalUi * tokenMeta.priceUsd).toFixed(2)}</span>}
+            </div>
+          )}
         </div>
       </Step>
 
