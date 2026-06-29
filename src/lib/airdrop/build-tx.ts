@@ -55,6 +55,8 @@ export function buildAirdropBatches(args: {
           payer,
           target.amountRaw,
           decimals,
+          [],
+          programId,
         ),
       );
     }
