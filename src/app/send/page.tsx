@@ -7,6 +7,7 @@ import {
   getAssociatedTokenAddressSync,
   getMint,
   getAccount,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import {
   PublicKey,
@@ -100,6 +101,13 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
 
   const [tokenMeta, setTokenMeta] = useState<{ symbol: string; name: string; priceUsd?: number } | null>(null);
 
+  const [userTokens, setUserTokens] = useState<Array<{
+    mint: string;
+    balanceUi: number;
+    decimals: number;
+  }>>([]);
+  const [loadingUserTokens, setLoadingUserTokens] = useState(false);
+
   const [balanceUi, setBalanceUi] = useState<number | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
 
@@ -184,6 +192,43 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
       .finally(() => !cancelled && setBalanceLoading(false));
   }, [publicKey, mintInfo, connection]);
 
+  // Fetch tokens held in the connected wallet (for easy selection)
+  useEffect(() => {
+    if (!publicKey) {
+      setUserTokens([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingUserTokens(true);
+    connection
+      .getParsedTokenAccountsByOwner(publicKey, {
+        programId: TOKEN_PROGRAM_ID,
+      })
+      .then(({ value }) => {
+        if (cancelled) return;
+        const held = value
+          .map((acc) => {
+            const info = acc.account.data.parsed.info;
+            const uiAmount = info.tokenAmount.uiAmount || 0;
+            if (uiAmount <= 0) return null;
+            return {
+              mint: info.mint,
+              balanceUi: uiAmount,
+              decimals: info.tokenAmount.decimals,
+            };
+          })
+          .filter((t): t is any => !!t);
+        setUserTokens(held);
+      })
+      .catch((e) => {
+        console.error("Failed to load wallet tokens:", e);
+      })
+      .finally(() => !cancelled && setLoadingUserTokens(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [publicKey, connection]);
+
   const insufficientBalance =
     balanceUi !== null && totalUi > 0 && balanceUi < totalUi;
 
@@ -191,6 +236,8 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
     connected &&
     publicKey &&
     mintInfo &&
+    !mintLoading &&
+    !balanceLoading &&
     totalUi > 0 &&
     !insufficientBalance &&
     recipients.length > 0 &&
@@ -390,6 +437,43 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
             spellCheck={false}
             className="w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev-2)] px-4 py-3 font-mono text-[13px] tracking-tight text-[color:var(--color-fg)] outline-none placeholder:text-[color:var(--color-fg-dim)] focus:border-[color:var(--color-border-strong)]"
           />
+
+          {connected && (
+            <div className="space-y-1">
+              <div className="text-[11px] text-[color:var(--color-fg-muted)]">
+                Or pick from your wallet:
+              </div>
+              {loadingUserTokens ? (
+                <div className="text-[11px] text-[color:var(--color-fg-muted)] flex items-center gap-1">
+                  <Spinner /> Loading your tokens…
+                </div>
+              ) : userTokens.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {userTokens.slice(0, 8).map((t) => (
+                    <button
+                      key={t.mint}
+                      onClick={() => setMintInput(t.mint)}
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-mono transition hover:border-[color:var(--color-border-strong)] ${
+                        mintInput === t.mint
+                          ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]"
+                          : "border-[color:var(--color-border)] text-[color:var(--color-fg-muted)]"
+                      }`}
+                      title={t.mint}
+                    >
+                      {t.mint.slice(0, 4)}…{t.mint.slice(-4)} · {t.balanceUi.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </button>
+                  ))}
+                  {userTokens.length > 8 && (
+                    <span className="text-[10px] text-[color:var(--color-fg-dim)] self-center">
+                      +{userTokens.length - 8} more
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="text-[10px] text-[color:var(--color-fg-dim)]">No tokens with balance found in wallet.</div>
+              )}
+            </div>
+          )}
           {mintLoading && (
             <div className="flex items-center gap-2 text-[12px] text-[color:var(--color-fg-muted)]">
               <Spinner /> Looking up mint…
@@ -546,6 +630,26 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
           </ul>
         </div>
       </Step>
+
+      {sendStatus === "idle" && !canSend && (
+        <div className="text-[11px] text-[color:var(--color-warning)]">
+          Button disabled because: {
+            !connected || !publicKey
+              ? "wallet not connected"
+              : mintLoading || balanceLoading
+              ? "still loading token details and balance..."
+              : !mintInfo
+              ? "no valid token mint selected (use the input or pick from your wallet list)"
+              : totalUi <= 0
+              ? "total amount must be greater than 0"
+              : insufficientBalance
+              ? `insufficient balance (you hold ${balanceUi?.toFixed(4) || 0} but entered ${totalUi})`
+              : recipients.length === 0
+              ? "no recipients selected"
+              : "one of the required fields is missing"
+          }
+        </div>
+      )}
 
       <div className="sticky bottom-6 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[color:var(--color-border-strong)] bg-[color:var(--color-bg-elev)]/95 px-5 py-4 backdrop-blur">
         <div className="text-[13px] text-[color:var(--color-fg-muted)]">
