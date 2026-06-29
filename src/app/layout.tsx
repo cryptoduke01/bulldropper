@@ -46,7 +46,10 @@ export const metadata: Metadata = {
   description:
     "Scan X for the most viral posts on any cashtag, find their Solana wallets, and ship the airdrop in one click. Custody-free.",
   icons: {
-    icon: "/icon",
+    icon: {
+      url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M2 12 Q 2 6 9 6 L 14 6 Q 22 6 22 12 Q 22 18 14 18 L 9 18 Q 2 18 2 12 Z' stroke='%23ff5419' stroke-width='1.6' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='6' cy='12' r='1.5' fill='%23ff5419'/%3E%3Cpath d='M14 12 L 21 9 L 21 15 Z' fill='%23ff5419'/%3E%3C/svg%3E",
+      type: "image/svg+xml",
+    },
   },
   openGraph: {
     title: "Bulldropper — Airdrop to viral posters",

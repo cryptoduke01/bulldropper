@@ -16,7 +16,7 @@
   --color-warning: #fb923c;
   --color-danger: #f87171;
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-suisse), "Suisse Intl", ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, "JetBrains Mono", monospace;
 
   --radius-sm: 0.375rem;
