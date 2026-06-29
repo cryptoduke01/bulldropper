@@ -90,7 +90,18 @@ export default function Home() {
       <footer className="border-t border-[color:var(--color-border)] py-10">
         <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-3 px-6 text-[12px] text-[color:var(--color-fg-dim)] sm:flex-row sm:items-center">
           <div>Bulldropper · custody-free Solana airdrops</div>
-          <div className="font-mono uppercase tracking-[0.14em]">v0.2 · 2026</div>
+          <div className="flex items-center gap-3 font-mono uppercase tracking-[0.14em]">
+            <span>v0.2 · 2026</span>
+            <span className="text-[color:var(--color-border)]">·</span>
+            <a
+              href="https://x.com/dukedotsol"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[color:var(--color-fg-muted)] transition hover:text-[color:var(--color-fg)] hover:underline"
+            >
+              @dukedotsol
+            </a>
+          </div>
         </div>
       </footer>
     </main>
