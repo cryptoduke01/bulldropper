@@ -1,0 +1,15 @@
+[build]
+  command = "pnpm build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_USE_NETLIFY_EDGE = "false"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Scan API can take 20-25s. Default Netlify function timeout is 10s (Pro: 26s).
+# If on free tier, lower SCAN_MAX_TWEETS in env until under 10s.
+[functions]
+  node_bundler = "esbuild"
