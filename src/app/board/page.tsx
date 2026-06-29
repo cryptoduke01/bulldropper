@@ -58,7 +58,7 @@ export default function BoardIndex() {
         </div>
 
         <div className="mt-10 text-sm text-[color:var(--color-fg-muted)]">
-          These boards power the airdrop tool. Creators check their rank, claim their wallet by posting a verification tweet, and can get included in airdrops.
+          Public boards for any cashtag. See top viral creators, their posts, claim your wallet (post a verification tweet to verify), and airdrop/tip directly.
         </div>
       </section>
     </main>

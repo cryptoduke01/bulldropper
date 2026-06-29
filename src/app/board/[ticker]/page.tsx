@@ -46,7 +46,7 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
     if (isInitial) setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/scan?ticker=${encodeURIComponent(t)}&top=100&maxTweets=200`);
+      const res = await fetch(`/api/scan?ticker=${encodeURIComponent(t)}&top=100&maxTweets=200&hours=24`);
       if (!res.ok) throw new Error(await res.text());
       const json: ScanResponse = await res.json();
       setData(json);
