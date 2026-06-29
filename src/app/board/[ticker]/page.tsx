@@ -22,6 +22,13 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
   const [loading, setLoading] = useState(true);
   const [qualityFilter, setQualityFilter] = useState(false);
 
+  // Claim flow states
+  const [claimHandle, setClaimHandle] = useState<string | null>(null);
+  const [claimStep, setClaimStep] = useState<'idle' | 'sign' | 'post-tweet' | 'verify'>('idle');
+  const [verifCode, setVerifCode] = useState('');
+  const [claimMessage, setClaimMessage] = useState('');
+  const [claimSignature, setClaimSignature] = useState('');
+
   const router = useRouter();
   const paramsObj = useParams<{ ticker: string }>();
   const { publicKey, signMessage, connected } = useWallet();
@@ -96,22 +103,61 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
 
     const handle = author.handle;
     const address = publicKey.toBase58();
+    setClaimHandle(handle);
+    setClaimStep('sign');
+    setClaiming(handle);
+    setClaimSuccess(null);
+
     const timestamp = Date.now();
     const message = `Claim @${handle} as owner for Bulldropper airdrops.\nWallet: ${address}\nTimestamp: ${timestamp}`;
+    setClaimMessage(message);
 
-    setClaiming(handle);
     try {
       const signature = await signMessage(new TextEncoder().encode(message));
       const sigBase58 = bs58.encode(signature);
+      setClaimSignature(sigBase58);
 
+      // Generate verification code
+      const code = `BD-CLAIM-${handle.toUpperCase()}-${Date.now().toString(36).slice(-6).toUpperCase()}`;
+      setVerifCode(code);
+      setClaimStep('post-tweet');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Signing failed");
+      setClaimStep('idle');
+      setClaiming(null);
+      setClaimHandle(null);
+    }
+  };
+
+  const verifyTweetAndClaim = async () => {
+    if (!claimHandle || !claimSignature || !verifCode || !publicKey) return;
+
+    setClaiming(claimHandle);
+    try {
+      // 1. Verify the tweet was posted by the handle
+      const verifyRes = await fetch("/api/claim/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          handle: claimHandle,
+          code: verifCode,
+        }),
+      });
+
+      const verifyData = await verifyRes.json();
+      if (!verifyData.verified) {
+        throw new Error("Could not verify the tweet. Make sure you posted it exactly and try again.");
+      }
+
+      // 2. Submit the claim with signed wallet
       const res = await fetch("/api/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          handle,
-          address,
-          signature: sigBase58,
-          message,
+          handle: claimHandle,
+          address: publicKey.toBase58(),
+          signature: claimSignature,
+          message: claimMessage,
         }),
       });
 
@@ -120,11 +166,16 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
         throw new Error(err.error || "Claim failed");
       }
 
-      setClaimSuccess(handle);
+      setClaimSuccess(claimHandle);
+      setClaimStep('idle');
+      setClaimHandle(null);
+      setVerifCode('');
+      setClaimMessage('');
+      setClaimSignature('');
       // Refresh to pick up claim
       setTimeout(() => fetchBoard(ticker), 500);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Claim failed");
+      alert(e instanceof Error ? e.message : "Verification or claim failed");
     } finally {
       setClaiming(null);
     }
@@ -132,7 +183,8 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
 
   const handleAirdropTop = (n: number) => {
     if (!data) return;
-    const top = data.authors.slice(0, n).filter((a) => a.wallet);
+    const source = qualityFilter ? filteredAuthors : data.authors;
+    const top = source.slice(0, n).filter((a) => a.wallet);
     if (top.length === 0) {
       alert("No claimable wallets in top results.");
       return;
@@ -342,6 +394,57 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
           <div className="fixed bottom-6 right-6 bg-[color:var(--color-success)] text-white px-4 py-2 rounded-xl text-sm shadow">
             ✅ Claim saved for @{claimSuccess}. Future airdrops will see it.
             <button onClick={() => setClaimSuccess(null)} className="ml-2">×</button>
+          </div>
+        )}
+
+        {/* Claim verification flow UI */}
+        {claimStep !== 'idle' && claimHandle && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[color:var(--color-bg-elev)] border border-[color:var(--color-border)] rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl z-50">
+            <h3 className="font-semibold mb-2">Claiming @{claimHandle}</h3>
+
+            {claimStep === 'sign' && (
+              <div>
+                <p className="text-sm text-[color:var(--color-fg-muted)] mb-3">First, sign to prove you control this wallet address.</p>
+                <button
+                  onClick={() => {/* already signed in handler */}}
+                  disabled
+                  className="w-full rounded-xl bg-[color:var(--color-accent)] px-4 py-2 text-white opacity-70"
+                >
+                  Signing wallet message...
+                </button>
+              </div>
+            )}
+
+            {claimStep === 'post-tweet' && verifCode && (
+              <div className="space-y-3 text-sm">
+                <p>1. Post <strong>exactly</strong> this tweet from <strong>@{claimHandle}</strong>:</p>
+                <div className="p-3 bg-[color:var(--color-bg-elev-2)] rounded font-mono text-xs break-all">
+                  Bulldropper verification for @{claimHandle}: {verifCode}
+                </div>
+                <p>2. Then click Verify below. We will search recent tweets from your account for this code.</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={verifyTweetAndClaim}
+                    disabled={claiming === claimHandle}
+                    className="flex-1 rounded-xl bg-[color:var(--color-accent)] px-4 py-2 text-white"
+                  >
+                    {claiming === claimHandle ? "Verifying..." : "I posted — Verify & Claim"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setClaimStep('idle');
+                      setClaimHandle(null);
+                      setVerifCode('');
+                      setClaiming(null);
+                    }}
+                    className="px-4 py-2 border rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <p className="text-[10px] text-[color:var(--color-fg-dim)]">This proves you control the X account (anyone claiming must post from it).</p>
+              </div>
+            )}
           </div>
         )}
       </section>
