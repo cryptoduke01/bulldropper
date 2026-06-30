@@ -503,8 +503,10 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
                 Or pick from your wallet:
               </div>
               {loadingUserTokens ? (
-                <div className="text-[11px] text-[color:var(--color-fg-muted)] flex items-center gap-1">
-                  <Spinner size="sm" label="Loading holdings…" />
+                <div className="flex flex-wrap gap-1.5">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="h-6 w-28 animate-pulse rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev-2)]" />
+                  ))}
                 </div>
               ) : userTokens.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
@@ -534,8 +536,10 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
             </div>
           )}
           {mintLoading && (
-            <div className="flex items-center gap-2 text-[12px] text-[color:var(--color-fg-muted)]">
+            <div className="flex flex-wrap gap-2 text-[12px] text-[color:var(--color-fg-muted)]">
               <Spinner size="sm" label="Looking up mint…" />
+              <div className="h-4 w-24 animate-pulse rounded bg-[color:var(--color-bg-elev-2)]" />
+              <div className="h-4 w-16 animate-pulse rounded bg-[color:var(--color-bg-elev-2)]" />
             </div>
           )}
           {mintError && (
@@ -737,15 +741,47 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
             ))}
           </ul>
 
-          {/* Total summary - shows actual after precision flooring for accuracy */}
+          {/* Actual total pill for accuracy */}
           {totalUi > 0 && tokenMeta && (
-            <div className="mt-3 text-right text-[13px] text-[color:var(--color-fg-muted)]">
-              Total: <span className="font-mono text-[color:var(--color-fg)]">{totalUi.toLocaleString()}</span> {tokenMeta.symbol}
-              {actualTotalSentUi > 0 && actualTotalSentUi !== totalUi && (
-                <span className="text-[11px] text-[color:var(--color-fg-dim)]"> (actual {actualTotalSentUi.toLocaleString(undefined, {maximumFractionDigits:4})} after on-chain rounding)</span>
-              )}
-              {tokenMeta.priceUsd && <span className="ml-2">≈ ${(totalUi * tokenMeta.priceUsd).toFixed(2)}</span>}
+            <div className="mt-3 flex items-center justify-between rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev-2)] px-3 py-2 text-[12px]">
+              <div className="text-[color:var(--color-fg-muted)]">
+                Total to send
+                {actualTotalSentUi > 0 && actualTotalSentUi !== totalUi && (
+                  <span className="ml-1 text-[10px] text-[color:var(--color-fg-dim)]">(after rounding)</span>
+                )}
+              </div>
+              <div className="font-mono text-[color:var(--color-fg)]">
+                {actualTotalSentUi > 0 ? actualTotalSentUi.toLocaleString(undefined, { maximumFractionDigits: 4 }) : totalUi.toLocaleString()} {tokenMeta.symbol}
+                {tokenMeta.priceUsd && <span className="ml-1 text-[color:var(--color-fg-dim)]">≈ ${( (actualTotalSentUi || totalUi) * tokenMeta.priceUsd ).toFixed(2)}</span>}
+              </div>
             </div>
+          )}
+
+          {/* Export CSV */}
+          {recipients.length > 0 && totalUi > 0 && (
+            <button
+              onClick={() => {
+                const csvRows = [
+                  ['handle', 'wallet', 'amount', 'approx_usd'].join(','),
+                  ...recipients.map((r, i) => {
+                    const amt = (actualDisplayAmounts[i] ?? amountsUi[i] ?? 0);
+                    const usd = tokenMeta?.priceUsd ? (amt * tokenMeta.priceUsd).toFixed(4) : '';
+                    return [r.handle, r.wallet, amt.toFixed(6), usd].join(',');
+                  })
+                ];
+                const csv = csvRows.join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `airdrop-${payload.label}-${Date.now()}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="mt-2 text-[11px] text-[color:var(--color-fg-muted)] hover:text-[color:var(--color-fg)] hover:underline self-end"
+            >
+              Export recipients + amounts as CSV →
+            </button>
           )}
         </div>
       </Step>
@@ -803,6 +839,10 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
                 {sent}/{batchResults.length}
               </span>{" "}
               batches
+              <span className="mx-1 text-[color:var(--color-fg-dim)]">·</span>
+              <div className="inline-block h-1.5 w-16 rounded bg-[color:var(--color-border)] overflow-hidden align-middle">
+                <div className="h-full bg-[color:var(--color-accent)] transition-all" style={{ width: `${Math.round((sent / Math.max(1, batchResults.length)) * 100)}%` }} />
+              </div>
               {failed > 0 && (
                 <span className="ml-2 text-[color:var(--color-danger)]">
                   {failed} failed
