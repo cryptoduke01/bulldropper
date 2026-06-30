@@ -43,5 +43,11 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "pnpm": {
+    "overrides": {
+      "@solana-program/token": "0.8.1",
+      "@solana/kit": "2.3.0"
+    }
   }
 }
