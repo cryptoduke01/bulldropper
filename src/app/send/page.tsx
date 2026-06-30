@@ -22,6 +22,7 @@ import { loadAirdrop, type AirdropPayload, clearAirdrop } from "@/lib/util/stora
 import {
   buildAirdropBatches,
   computeAmountsUi,
+  computeRawAmounts,
   isValidPubkey,
   uiToRaw,
 } from "@/lib/airdrop/build-tx";
@@ -121,6 +122,22 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
   const amountsUi = useMemo(
     () => computeAmountsUi(recipients, totalUi, distMode),
     [recipients, totalUi, distMode],
+  );
+
+  // Precise raw amounts for actual on-chain distribution (sums exactly, remainder handled)
+  const rawAmounts = useMemo(() => {
+    if (!mintInfo || totalUi <= 0) return [];
+    return computeRawAmounts(recipients, totalUi, mintInfo.decimals, distMode);
+  }, [recipients, totalUi, distMode, mintInfo]);
+
+  const actualDisplayAmounts = useMemo(() => {
+    if (!mintInfo || rawAmounts.length === 0) return amountsUi;
+    return rawAmounts.map((r) => Number(r) / 10 ** mintInfo.decimals);
+  }, [rawAmounts, mintInfo, amountsUi]);
+
+  const actualTotalSentUi = useMemo(
+    () => actualDisplayAmounts.reduce((sum, a) => sum + a, 0),
+    [actualDisplayAmounts]
   );
 
   const currentMint = mintInfo?.address;
@@ -240,16 +257,17 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
           const uiAmount = info.tokenAmount.uiAmount != null ? info.tokenAmount.uiAmount : parseFloat(info.tokenAmount.uiAmountString || '0');
           if (uiAmount <= 0) return;
           const mint = info.mint;
-          const existing = heldMap.get(mint);
-          const newBalance = (existing?.balanceUi || 0) + uiAmount;
           const thisAccount = acc.pubkey.toBase58();
-          const useThisAccount = !existing || uiAmount > (existing.balanceUi || 0);
-          heldMap.set(mint, {
-            mint,
-            balanceUi: newBalance,
-            decimals: info.tokenAmount.decimals,
-            tokenAccount: useThisAccount ? thisAccount : existing!.tokenAccount,
-          });
+          const existing = heldMap.get(mint);
+          // Use only the largest single ATA per mint as the source for sending (accurate payer balance)
+          if (!existing || uiAmount > existing.balanceUi) {
+            heldMap.set(mint, {
+              mint,
+              balanceUi: uiAmount,
+              decimals: info.tokenAmount.decimals,
+              tokenAccount: thisAccount,
+            });
+          }
         });
         const held = Array.from(heldMap.values()).sort((a, b) => b.balanceUi - a.balanceUi);
         setUserTokens(held);
@@ -300,7 +318,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
 
       const targets = recipients.map((r, i) => ({
         recipient: new PublicKey(r.wallet),
-        amountRaw: uiToRaw(amountsUi[i] ?? 0, mintInfo.decimals),
+        amountRaw: rawAmounts[i] ?? 0n,
       })).filter((t) => t.amountRaw > 0n);
 
       if (targets.length === 0) {
@@ -486,7 +504,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
               </div>
               {loadingUserTokens ? (
                 <div className="text-[11px] text-[color:var(--color-fg-muted)] flex items-center gap-1">
-                  <Spinner /> Loading your tokens…
+                  <Spinner size="sm" label="Loading holdings…" />
                 </div>
               ) : userTokens.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
@@ -517,7 +535,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
           )}
           {mintLoading && (
             <div className="flex items-center gap-2 text-[12px] text-[color:var(--color-fg-muted)]">
-              <Spinner /> Looking up mint…
+              <Spinner size="sm" label="Looking up mint…" />
             </div>
           )}
           {mintError && (
@@ -582,6 +600,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
             <div className="text-[12px] text-[color:var(--color-fg-muted)]">
               Total amount to airdrop (in tokens)
               {tokenMeta?.symbol && <span className="font-mono text-[color:var(--color-fg)]"> {tokenMeta.symbol}</span>}
+              <span className="ml-1 text-[10px] text-[color:var(--color-fg-dim)]">(per-recipient amounts rounded down to token precision)</span>
             </div>
 
             {/* Quick preset buttons for bulk airdrops */}
@@ -635,10 +654,10 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
                 className="w-full max-w-xs rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev-2)] px-4 py-3 font-mono text-[15px] tabular text-[color:var(--color-fg)] outline-none placeholder:text-[color:var(--color-fg-dim)] focus:border-[color:var(--color-border-strong)]"
               />
               <span className="text-[13px] text-[color:var(--color-fg-muted)]">
-                {distMode === "equal" && totalUi > 0
-                  ? `≈ ${(totalUi / recipients.length).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${tokenMeta?.symbol || 'each'}`
+                {distMode === "equal" && totalUi > 0 && actualDisplayAmounts.length > 0
+                  ? `≈ ${actualDisplayAmounts[0]?.toLocaleString(undefined, { maximumFractionDigits: 4 }) ?? (totalUi / recipients.length).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${tokenMeta?.symbol || 'each'} (floored)`
                   : distMode === "weighted" && totalUi > 0
-                    ? "top → bottom, score-weighted"
+                    ? "top → bottom, score-weighted (floored)"
                     : ""}
               </span>
             </div>
@@ -657,6 +676,9 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
       </Step>
 
       <Step n="03" title="Review who's getting what">
+        <div className="mb-2 text-[11px] text-[color:var(--color-fg-dim)]">
+          Amounts below are what will actually be sent (after flooring to on-chain decimals for accuracy).
+        </div>
         {tokenMeta && (
           <div className="mb-3 text-[12px] text-[color:var(--color-fg-muted)]">
             Airdropping <span className="font-mono text-[color:var(--color-fg)]">{tokenMeta.symbol}</span>
@@ -701,11 +723,11 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
                 <div className="text-left sm:text-right font-mono text-[12px] tabular text-[color:var(--color-fg)] sm:order-4">
                   {totalUi > 0 ? (
                     <>
-                      {(amountsUi[i] ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                      {(actualDisplayAmounts[i] ?? amountsUi[i] ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}
                       {tokenMeta?.symbol && <span className="text-[color:var(--color-fg-dim)]"> {tokenMeta.symbol}</span>}
                       {tokenMeta?.priceUsd && (
                         <div className="text-[10px] text-[color:var(--color-fg-dim)]">
-                          ≈ ${((amountsUi[i] ?? 0) * tokenMeta.priceUsd).toFixed(4)}
+                          ≈ ${((actualDisplayAmounts[i] ?? amountsUi[i] ?? 0) * tokenMeta.priceUsd).toFixed(4)}
                         </div>
                       )}
                     </>
@@ -715,10 +737,13 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
             ))}
           </ul>
 
-          {/* Total summary */}
+          {/* Total summary - shows actual after precision flooring for accuracy */}
           {totalUi > 0 && tokenMeta && (
             <div className="mt-3 text-right text-[13px] text-[color:var(--color-fg-muted)]">
               Total: <span className="font-mono text-[color:var(--color-fg)]">{totalUi.toLocaleString()}</span> {tokenMeta.symbol}
+              {actualTotalSentUi > 0 && actualTotalSentUi !== totalUi && (
+                <span className="text-[11px] text-[color:var(--color-fg-dim)]"> (actual {actualTotalSentUi.toLocaleString(undefined, {maximumFractionDigits:4})} after on-chain rounding)</span>
+              )}
               {tokenMeta.priceUsd && <span className="ml-2">≈ ${(totalUi * tokenMeta.priceUsd).toFixed(2)}</span>}
             </div>
           )}
@@ -727,20 +752,20 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
 
       {sendStatus === "idle" && !canSend && (
         <div className="text-[11px] text-[color:var(--color-warning)]">
-          Button disabled because: {
+          Cannot send yet: {
             !connected || !publicKey
-              ? "wallet not connected"
+              ? "connect a wallet first"
               : mintLoading || balanceLoading
-              ? "still loading token details and balance..."
+              ? "fetching token info and your balance…"
               : !mintInfo
-              ? "no valid token mint selected (use the input or pick from your wallet list)"
+              ? "select a valid token mint (paste CA or pick from holdings)"
               : totalUi <= 0
-              ? "total amount must be greater than 0"
+              ? "enter a total amount > 0"
               : insufficientBalance
-              ? `insufficient balance (you hold ${effectiveBalanceUi?.toFixed(4) || 0} but entered ${totalUi})`
+              ? `your selected source only has ${effectiveBalanceUi?.toFixed(4) || 0} (need ${totalUi})`
               : recipients.length === 0
-              ? "no recipients selected"
-              : "one of the required fields is missing"
+              ? "no recipients chosen on the board/scan"
+              : "check your inputs"
           }
         </div>
       )}
@@ -769,14 +794,15 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
               </label>
             </>
           )}
-          {sendStatus === "preparing" && "Preparing transactions…"}
-          {sendStatus === "signing" && "Sign in your wallet…"}
+          {sendStatus === "preparing" && "Preparing batches & ATAs…"}
+          {sendStatus === "signing" && "Sign the transactions in your wallet…"}
           {sendStatus === "sending" && (
             <>
-              Sending{" "}
+              Broadcasting{" "}
               <span className="tabular text-[color:var(--color-fg)]">
                 {sent}/{batchResults.length}
-              </span>
+              </span>{" "}
+              batches
               {failed > 0 && (
                 <span className="ml-2 text-[color:var(--color-danger)]">
                   {failed} failed
@@ -787,8 +813,8 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
           )}
           {sendStatus === "done" && (
             <>
-              <span className="text-[color:var(--color-success)]">✓ done</span>{" "}
-              {sent}/{batchResults.length} batches landed
+              <span className="text-[color:var(--color-success)]">✓ All done</span>{" "}
+              {sent}/{batchResults.length} batches confirmed
               {useJito && <span className="ml-1 text-[10px] text-[color:var(--color-accent)]">via Jito bundles</span>}
             </>
           )}
@@ -803,7 +829,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
         >
           {sendStatus === "preparing" || sendStatus === "signing" || sendStatus === "sending" ? (
             <>
-              <Spinner /> {sendStatus === "signing" ? "Awaiting signature" : "Sending"}
+              <Spinner size="sm" label={sendStatus === "signing" ? "Awaiting signature" : "Sending"} />
             </>
           ) : sendStatus === "done" ? (
             "Send another"
@@ -925,11 +951,15 @@ function StatusPill({ status }: { status: BatchResult["status"] }) {
   );
 }
 
-function Spinner() {
+function Spinner({ size = "sm", label }: { size?: "sm" | "md"; label?: string }) {
+  const cls = size === "md" ? "size-4" : "size-3.5";
   return (
-    <svg className="size-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
-      <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-    </svg>
+    <span className="inline-flex items-center gap-1.5 text-[color:var(--color-fg-muted)]">
+      <svg className={`${cls} animate-spin`} viewBox="0 0 24 24" fill="none" aria-hidden>
+        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+        <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+      {label && <span className="text-xs tabular">{label}</span>}
+    </span>
   );
 }

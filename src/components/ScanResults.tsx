@@ -186,15 +186,15 @@ export function ScanResults({ ticker, hours }: Props) {
           className="flex items-center gap-2 rounded-xl bg-[color:var(--color-accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-30"
         >
           {isPending ? (
-            <>
+            <span className="inline-flex items-center gap-1.5">
               <svg className="size-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
                 <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
                 <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
               </svg>
-              <span>Loading</span>
-            </>
+              <span>Preparing airdrop…</span>
+            </span>
           ) : (
-            <span>Airdrop {selected.size} →</span>
+            <span>Airdrop {selected.size} recipients →</span>
           )}
         </button>
       </div>

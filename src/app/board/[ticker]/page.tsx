@@ -421,7 +421,7 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
             {claimStep === 'sign' && (
               <div>
                 <p className="text-xs sm:text-sm text-[color:var(--color-fg-muted)] mb-3">
-                  Logged in as @{user?.twitter?.username} via X. Sign with your (embedded or connected) wallet to link it.
+                  Logged in via X as @{user?.twitter?.username}. Signing proves you control the wallet that will receive airdrops for this handle.
                 </p>
                 <button
                   onClick={() => {/* handled in claim logic */}}

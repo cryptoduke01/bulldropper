@@ -72,10 +72,7 @@ export interface ScoredRecipient {
 }
 
 /**
- * Compute per-recipient amounts.
- * - mode "equal": every recipient gets totalUi / N
- * - mode "weighted": amounts proportional to score, summing to totalUi
- * Returns floats in UI units; caller scales to raw bigint via decimals.
+ * Compute per-recipient amounts (floats for display).
  */
 export function computeAmountsUi(
   recipients: ScoredRecipient[],
@@ -93,6 +90,47 @@ export function computeAmountsUi(
     return recipients.map(() => each);
   }
   return recipients.map((r) => (Math.max(0, r.score) / sumScore) * totalUi);
+}
+
+/**
+ * Distribute total into exact raw amounts that sum precisely to the floored totalRaw.
+ * Uses integer math + remainder handling for accuracy (no lost dust on last recipient).
+ */
+export function computeRawAmounts(
+  recipients: ScoredRecipient[],
+  totalUi: number,
+  decimals: number,
+  mode: "equal" | "weighted",
+): bigint[] {
+  const totalRaw = uiToRaw(totalUi, decimals);
+  if (recipients.length === 0 || totalRaw === 0n) return recipients.map(() => 0n);
+
+  if (mode === "equal") {
+    const base = totalRaw / BigInt(recipients.length);
+    let rem = totalRaw % BigInt(recipients.length);
+    return recipients.map((_, i) => base + (i < Number(rem) ? 1n : 0n));
+  }
+
+  const weights = recipients.map((r) => Math.max(0, r.score));
+  const sumW = weights.reduce((a, b) => a + b, 0);
+  if (sumW <= 0) {
+    // fallback equal
+    const base = totalRaw / BigInt(recipients.length);
+    let rem = totalRaw % BigInt(recipients.length);
+    return recipients.map((_, i) => base + (i < Number(rem) ? 1n : 0n));
+  }
+
+  // weighted with integer proportion + remainder to last
+  let assigned = 0n;
+  const rawAmts: bigint[] = weights.map((w, i) => {
+    if (i === recipients.length - 1) {
+      return totalRaw - assigned;
+    }
+    const share = (totalRaw * BigInt(Math.floor(w * 1_000_000_000))) / BigInt(Math.floor(sumW * 1_000_000_000));
+    assigned += share;
+    return share;
+  });
+  return rawAmts;
 }
 
 export function uiToRaw(amountUi: number, decimals: number): bigint {
