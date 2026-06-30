@@ -604,7 +604,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
             <div className="text-[12px] text-[color:var(--color-fg-muted)]">
               Total amount to airdrop (in tokens)
               {tokenMeta?.symbol && <span className="font-mono text-[color:var(--color-fg)]"> {tokenMeta.symbol}</span>}
-              <span className="ml-1 text-[10px] text-[color:var(--color-fg-dim)]">(per-recipient amounts rounded down to token precision)</span>
+              <span className="ml-1 text-[10px] text-[color:var(--color-fg-dim)]">— per-recipient amounts are floored to on-chain decimals for exact transfers (no dust loss)</span>
             </div>
 
             {/* Quick preset buttons for bulk airdrops */}
@@ -978,8 +978,15 @@ function ModeChip({
 }
 
 function StatusPill({ status }: { status: BatchResult["status"] }) {
+  if (status === "pending") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--color-bg-elev-2)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-[color:var(--color-fg-muted)]">
+        <div className="size-2.5 animate-spin rounded-full border border-[color:var(--color-border)] border-t-[color:var(--color-fg-muted)]" />
+        pending
+      </span>
+    );
+  }
   const map = {
-    pending: { label: "pending", cls: "text-[color:var(--color-fg-muted)] bg-[color:var(--color-bg-elev-2)]" },
     sent: { label: "sent", cls: "text-[color:var(--color-success)] bg-[color:var(--color-success)]/10" },
     failed: { label: "failed", cls: "text-[color:var(--color-danger)] bg-[color:var(--color-danger)]/10" },
   } as const;
@@ -992,14 +999,21 @@ function StatusPill({ status }: { status: BatchResult["status"] }) {
 }
 
 function Spinner({ size = "sm", label }: { size?: "sm" | "md"; label?: string }) {
-  const cls = size === "md" ? "size-4" : "size-3.5";
+  const cls = size === "md" ? "size-5" : "size-4";
   return (
-    <span className="inline-flex items-center gap-1.5 text-[color:var(--color-fg-muted)]">
+    <span className="inline-flex items-center gap-2 text-[color:var(--color-fg-muted)]">
       <svg className={`${cls} animate-spin`} viewBox="0 0 24 24" fill="none" aria-hidden>
-        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
-        <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.2" strokeWidth="3" />
+        <path
+          d="M22 12a10 10 0 0 1-10 10"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <circle cx="12" cy="12" r="2.5" fill="currentColor" fillOpacity="0.7" />
       </svg>
-      {label && <span className="text-xs tabular">{label}</span>}
+      {label && <span className="text-[12px] tabular tracking-tight">{label}</span>}
     </span>
   );
 }

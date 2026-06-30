@@ -226,7 +226,14 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
   };
 
   if (!ticker) {
-    return <div className="p-8">Loading...</div>;
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center p-8">
+        <div className="flex items-center gap-3 text-[color:var(--color-fg-muted)]">
+          <div className="size-4 animate-spin rounded-full border-2 border-[color:var(--color-border)] border-t-[color:var(--color-accent)]" />
+          <span className="text-sm">Loading board…</span>
+        </div>
+      </div>
+    );
   }
 
   const displayAuthors = filteredAuthors.length > 0 ? filteredAuthors : (data?.authors || []);

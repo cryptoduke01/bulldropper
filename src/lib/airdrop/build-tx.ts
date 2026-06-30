@@ -120,17 +120,21 @@ export function computeRawAmounts(
     return recipients.map((_, i) => base + (i < Number(rem) ? 1n : 0n));
   }
 
-  // weighted with integer proportion + remainder to last
-  let assigned = 0n;
-  const rawAmts: bigint[] = weights.map((w, i) => {
-    if (i === recipients.length - 1) {
-      return totalRaw - assigned;
-    }
-    const share = (totalRaw * BigInt(Math.floor(w * 1_000_000_000))) / BigInt(Math.floor(sumW * 1_000_000_000));
-    assigned += share;
-    return share;
+  // weighted: compute floor shares then distribute remainders preferentially to highest-score recipients
+  // (list is sorted desc by score, so top get extras first for accuracy)
+  const floorShares: bigint[] = weights.map((w) => {
+    if (sumW <= 0) return 0n;
+    const scaledW = BigInt(Math.floor(w * 1_000_000_000_000));
+    const scaledSum = BigInt(Math.floor(sumW * 1_000_000_000_000));
+    return (totalRaw * scaledW) / scaledSum;
   });
-  return rawAmts;
+  let sumFloor = floorShares.reduce((a, b) => a + b, 0n);
+  let rem = totalRaw - sumFloor;
+  const sortedIdx = [...Array(recipients.length).keys()].sort((a, b) => weights[b] - weights[a]);
+  for (let k = 0; k < rem; k++) {
+    floorShares[sortedIdx[k % sortedIdx.length]] += 1n;
+  }
+  return floorShares;
 }
 
 export function uiToRaw(amountUi: number, decimals: number): bigint {
