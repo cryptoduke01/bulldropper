@@ -494,7 +494,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
                     <button
                       key={t.mint}
                       onClick={() => setMintInput(t.mint)}
-                      className={`rounded-full border px-2 py-0.5 text-[10px] font-mono transition hover:border-[color:var(--color-border-strong)] ${
+                      className={`rounded-full border px-2.5 py-1 text-[10px] sm:text-[11px] font-mono min-h-[30px] transition hover:border-[color:var(--color-border-strong)] ${
                         mintInput === t.mint
                           ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]"
                           : "border-[color:var(--color-border)] text-[color:var(--color-fg-muted)]"
@@ -597,7 +597,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
                       setTotalAmount(fixed);
                     }
                   }}
-                  className="rounded-full border border-[color:var(--color-border)] px-2.5 py-0.5 text-[11px] text-[color:var(--color-fg-muted)] hover:border-[color:var(--color-border-strong)] hover:text-[color:var(--color-fg)] transition"
+                  className="rounded-full border border-[color:var(--color-border)] px-2.5 py-1 text-[11px] min-h-[30px] text-[color:var(--color-fg-muted)] hover:border-[color:var(--color-border-strong)] hover:text-[color:var(--color-fg)] transition"
                 >
                   ${usd}
                 </button>
@@ -608,7 +608,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
                 <button
                   key={`tok-${amt}`}
                   onClick={() => setTotalAmount(amt.toString())}
-                  className="rounded-full border border-[color:var(--color-border)] px-2.5 py-0.5 text-[11px] text-[color:var(--color-fg-muted)] hover:border-[color:var(--color-border-strong)] hover:text-[color:var(--color-fg)] transition"
+                  className="rounded-full border border-[color:var(--color-border)] px-2.5 py-1 text-[11px] min-h-[30px] text-[color:var(--color-fg-muted)] hover:border-[color:var(--color-border-strong)] hover:text-[color:var(--color-fg)] transition"
                 >
                   {amt.toLocaleString()}
                 </button>
@@ -618,7 +618,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
               {balanceUi != null && balanceUi > 0 && (
                 <button
                   onClick={() => setTotalAmount(balanceUi.toFixed(Math.min(6, mintInfo?.decimals || 6)))}
-                  className="rounded-full border border-[color:var(--color-border)] px-2.5 py-0.5 text-[11px] text-[color:var(--color-accent)] hover:border-[color:var(--color-border-strong)] transition"
+                  className="rounded-full border border-[color:var(--color-border)] px-2.5 py-1 text-[11px] min-h-[30px] text-[color:var(--color-accent)] hover:border-[color:var(--color-border-strong)] transition"
                 >
                   Max
                 </button>
@@ -669,12 +669,12 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
             {recipients.map((r, i) => (
               <li
                 key={r.wallet}
-                className="grid grid-cols-[28px_1fr_120px_160px] items-center gap-3 px-4 py-3 text-[13px]"
+                className="flex flex-col gap-y-1 px-4 py-3 text-[13px] sm:grid sm:grid-cols-[28px_1fr_auto_auto] sm:items-center sm:gap-3"
               >
-                <div className="font-mono text-[11px] tabular text-[color:var(--color-fg-dim)]">
+                <div className="font-mono text-[11px] tabular text-[color:var(--color-fg-dim)] sm:order-1">
                   {String(i + 1).padStart(2, "0")}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 sm:order-2">
                   <a
                     href={`https://x.com/${r.handle}`}
                     target="_blank"
@@ -683,7 +683,10 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
                   >
                     @{r.handle}
                   </a>
-                  <div className="text-[11px] text-[color:var(--color-fg-dim)]">
+                  <div className="text-[11px] text-[color:var(--color-fg-dim)] sm:hidden">
+                    {compactNumber(r.followers)} followers · score {r.score.toFixed(1)}
+                  </div>
+                  <div className="hidden sm:block text-[11px] text-[color:var(--color-fg-dim)]">
                     {compactNumber(r.followers)} followers · score {r.score.toFixed(1)}
                   </div>
                 </div>
@@ -691,11 +694,11 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
                   href={`https://solscan.io/account/${r.wallet}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="font-mono text-[11px] tabular text-[color:var(--color-accent)] hover:underline"
+                  className="font-mono text-[11px] tabular text-[color:var(--color-accent)] hover:underline sm:order-3"
                 >
                   {shortAddress(r.wallet, 4, 4)}
                 </a>
-                <div className="text-right font-mono text-[12px] tabular text-[color:var(--color-fg)]">
+                <div className="text-left sm:text-right font-mono text-[12px] tabular text-[color:var(--color-fg)] sm:order-4">
                   {totalUi > 0 ? (
                     <>
                       {(amountsUi[i] ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}
@@ -742,7 +745,7 @@ function SendFlow({ payload }: { payload: AirdropPayload }) {
         </div>
       )}
 
-      <div className="sticky bottom-6 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[color:var(--color-border-strong)] bg-[color:var(--color-bg-elev)]/95 px-5 py-4 backdrop-blur">
+      <div className="sticky bottom-4 sm:bottom-6 z-20 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-2xl border border-[color:var(--color-border-strong)] bg-[color:var(--color-bg-elev)]/95 px-4 sm:px-5 py-3 sm:py-4 backdrop-blur">
         <div className="text-[13px] text-[color:var(--color-fg-muted)]">
           {sendStatus === "idle" && (
             <>

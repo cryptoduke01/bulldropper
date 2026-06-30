@@ -17,12 +17,13 @@ Built in response to [@blknoiz06's ask](https://x.com/blknoiz06/status/207134987
 - Equal or score-weighted splits
 - Jito bundles (with automatic fallback)
 - 100% custody-free — you sign everything
+- **Public Viral Boards** (`/board/$TICKER`): live ranked leaderboard + feed; creators login with X (Privy OAuth) to securely claim + link their wallet (embedded or external) so you can airdrop the real posters
 
 ## How it works
 
-1. Paste a cashtag (`$TICKER`) or mint address and scan.
+1. Paste a cashtag (`$TICKER`) or mint address and scan (or visit `/board/$TICKER` for the public live leaderboard + feed).
 2. Review the ranked list of viral posters (filter + random/top-N selection available).
-3. Select recipients and go to the airdrop screen.
+3. On the board: creators can "Login with X" (Privy) to claim their handle + link a wallet securely. Select recipients (or use claimed wallets) and go to the airdrop screen.
 4. **Choose token to send** — paste a mint or pick from tokens you hold in your connected wallet (full support for Token + Token-2022).
 5. Enter total amount (or use presets: $100/$500/$1k/$5k, token counts, or Max). See live USD value.
 6. Choose equal or weighted split → review per-person amounts → connect wallet and sign.
@@ -36,6 +37,7 @@ Your keys never leave your browser.
 - Next.js 15 (App Router)
 - Tailwind v4
 - Solana Wallet Adapter + `@solana/spl-token` (Token + Token-2022)
+- Privy for X/Twitter OAuth + embedded Solana wallets (used for secure claims on boards)
 - Jupiter for token metadata & pricing
 - twitterapi.io for X data
 
@@ -74,6 +76,8 @@ pnpm scan --query 9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump --hours 24
 | `SCAN_QPS_DELAY_MS` | 250 | Delay between paginated calls (increase for free tier) |
 | `SCAN_RECENT_TWEETS_PER_AUTHOR` | 40 | Extra recent tweets scanned per author (wallet fallback) |
 | `NEXT_PUBLIC_SOLANA_RPC` | public mainnet | Use a private RPC (Helius, QuickNode, etc.) in production |
+| `NEXT_PUBLIC_PRIVY_APP_ID` | — | Privy app ID (X login + embedded wallets) |
+| `PRIVY_APP_SECRET` | — | Privy secret (server only; verifies X claims) |
 
 ## Airdropping
 
@@ -107,8 +111,8 @@ We build small batches (max 5 recipients per transaction + ATA creation). You si
 ## Limitations & Future Work
 
 - Wallet extraction success rate is usually **10–20%** (depends entirely on people posting addresses publicly).
-- No "claim" / proof-of-ownership mechanism yet.
-- No on-chain history of past airdrops (state is local to the browser).
+- Claims on /board use Privy X OAuth login + wallet signature (embedded or external) to securely prove handle ownership and link a wallet. No tweet verification codes needed.
+- Claims are stored via Netlify Blobs (with in-memory fallback) so future scans and boards surface the verified wallet for a handle.
 
 ## Recent Improvements
 

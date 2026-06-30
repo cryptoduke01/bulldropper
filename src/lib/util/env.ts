@@ -10,6 +10,8 @@ const Env = z.object({
   SCAN_QPS_DELAY_MS: z.coerce.number().int().min(0).default(250),
   // How many recent tweets to scan per author when their best post / profile didn't contain a wallet.
   SCAN_RECENT_TWEETS_PER_AUTHOR: z.coerce.number().int().min(0).default(40),
+  NEXT_PUBLIC_PRIVY_APP_ID: z.string().optional(),
+  PRIVY_APP_SECRET: z.string().optional(),
 });
 
 export type EnvConfig = z.infer<typeof Env>;

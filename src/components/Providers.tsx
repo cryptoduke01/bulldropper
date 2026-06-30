@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { PrivyProvider } from "@privy-io/react-auth";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { PhantomWalletAdapter, SolflareWalletAdapter } from "@solana/wallet-adapter-wallets";
@@ -20,10 +21,28 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>{children}</WalletModalProvider>
-      </WalletProvider>
-    </ConnectionProvider>
+    <PrivyProvider
+      appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
+      config={{
+        appearance: {
+          theme: "dark",
+          accentColor: "#ff5419",
+        },
+        // Enable Twitter/X login
+        loginMethods: ["twitter"],
+        // Solana embedded wallet support
+        embeddedWallets: {
+          solana: {
+            createOnLogin: "users-without-wallets",
+          },
+        },
+      }}
+    >
+      <ConnectionProvider endpoint={endpoint}>
+        <WalletProvider wallets={wallets} autoConnect>
+          <WalletModalProvider>{children}</WalletModalProvider>
+        </WalletProvider>
+      </ConnectionProvider>
+    </PrivyProvider>
   );
 }

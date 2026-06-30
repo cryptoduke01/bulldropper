@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { usePrivy, useLogin, useWallets, useSignMessage } from "@privy-io/react-auth";
 import bs58 from "bs58";
 import { Nav } from "@/components/Nav";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
@@ -24,8 +25,7 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
 
   // Claim flow states
   const [claimHandle, setClaimHandle] = useState<string | null>(null);
-  const [claimStep, setClaimStep] = useState<'idle' | 'sign' | 'post-tweet' | 'verify'>('idle');
-  const [verifCode, setVerifCode] = useState('');
+  const [claimStep, setClaimStep] = useState<'idle' | 'sign'>('idle');
   const [claimMessage, setClaimMessage] = useState('');
   const [claimSignature, setClaimSignature] = useState('');
 
@@ -33,6 +33,10 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
   const paramsObj = useParams<{ ticker: string }>();
   const { publicKey, signMessage, connected } = useWallet();
   const { setVisible } = useWalletModal();
+  const { user, authenticated, getAccessToken } = usePrivy();
+  const { login } = useLogin();
+  const { wallets } = useWallets();
+  const { signMessage: privySignMessage } = useSignMessage();
 
   // Resolve ticker
   useEffect(() => {
@@ -92,17 +96,44 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
   }, [ticker, isPolling]);
 
   const handleClaim = async (author: ScanAuthor) => {
-    if (!connected || !publicKey) {
-      setVisible(true);
+    const targetHandle = author.handle.toLowerCase().replace(/^@/, "");
+
+    // Ensure Privy X login first for verified handle
+    if (!authenticated || !user?.twitter?.username) {
+      // loginMethods restricted to twitter in Providers; no arg needed
+      login();
       return;
     }
-    if (!signMessage) {
-      alert("Your wallet does not support message signing.");
+
+    const loggedInHandle = user.twitter.username.toLowerCase().replace(/^@/, "");
+    if (loggedInHandle !== targetHandle) {
+      alert(`Please login with the X account @${author.handle} to claim this handle.`);
+      return;
+    }
+
+    // Resolve address: prefer external connected wallet, else use Privy embedded Solana wallet
+    let address: string | null = null;
+    let useExternal = false;
+    let embeddedForSign: any = null;
+
+    if (connected && publicKey) {
+      address = publicKey.toBase58();
+      useExternal = true;
+    } else {
+      const embeddedSol = wallets.find((w: any) => w.chainType === "solana");
+      if (embeddedSol?.address) {
+        address = embeddedSol.address;
+        embeddedForSign = embeddedSol;
+      }
+    }
+
+    if (!address) {
+      // Prompt external wallet connect (embedded should exist post X login, but fall back)
+      setVisible(true);
       return;
     }
 
     const handle = author.handle;
-    const address = publicKey.toBase58();
     setClaimHandle(handle);
     setClaimStep('sign');
     setClaiming(handle);
@@ -113,51 +144,34 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
     setClaimMessage(message);
 
     try {
-      const signature = await signMessage(new TextEncoder().encode(message));
-      const sigBase58 = bs58.encode(signature);
-      setClaimSignature(sigBase58);
-
-      // Generate verification code
-      const code = `BD-CLAIM-${handle.toUpperCase()}-${Date.now().toString(36).slice(-6).toUpperCase()}`;
-      setVerifCode(code);
-      setClaimStep('post-tweet');
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Signing failed");
-      setClaimStep('idle');
-      setClaiming(null);
-      setClaimHandle(null);
-    }
-  };
-
-  const verifyTweetAndClaim = async () => {
-    if (!claimHandle || !claimSignature || !verifCode || !publicKey) return;
-
-    setClaiming(claimHandle);
-    try {
-      // 1. Verify the tweet was posted by the handle
-      const verifyRes = await fetch("/api/claim/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          handle: claimHandle,
-          code: verifCode,
-        }),
-      });
-
-      const verifyData = await verifyRes.json();
-      if (!verifyData.verified) {
-        throw new Error("Could not verify the tweet. Make sure you posted it exactly and try again.");
+      const msgBytes = new TextEncoder().encode(message);
+      let rawSig: any;
+      if (useExternal && signMessage) {
+        rawSig = await (signMessage as any)(msgBytes);
+      } else if (embeddedForSign && privySignMessage) {
+        // @ts-expect-error cross-provider signMessage return shape
+        const res = await privySignMessage({ message: msgBytes, wallet: embeddedForSign });
+        rawSig = res.signature;
+      } else {
+        throw new Error("No available signing method for the selected wallet.");
       }
+      const sigBase58 = String((bs58 as any).encode(rawSig));
+      setClaimSignature(sigBase58 as any);
 
-      // 2. Submit the claim with signed wallet
+      // Include Privy access token so server can verify X OAuth ownership of the handle
+      const accessToken = await getAccessToken();
+
+      // Skip manual tweet verify since X login via Privy already proves handle ownership
+      // Submit claim directly
       const res = await fetch("/api/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          handle: claimHandle,
-          address: publicKey.toBase58(),
-          signature: claimSignature,
-          message: claimMessage,
+          handle,
+          address,
+          signature: sigBase58,
+          message,
+          privyAccessToken: accessToken || undefined,
         }),
       });
 
@@ -166,20 +180,22 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
         throw new Error(err.error || "Claim failed");
       }
 
-      setClaimSuccess(claimHandle);
+      setClaimSuccess(handle);
       setClaimStep('idle');
       setClaimHandle(null);
-      setVerifCode('');
       setClaimMessage('');
       setClaimSignature('');
       // Refresh to pick up claim
       setTimeout(() => fetchBoard(ticker), 500);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Verification or claim failed");
-    } finally {
+      alert(e instanceof Error ? e.message : "Claim failed");
+      setClaimStep('idle');
       setClaiming(null);
+      setClaimHandle(null);
     }
   };
+
+
 
   const handleAirdropTop = (n: number) => {
     if (!data) return;
@@ -220,40 +236,40 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
       <Nav showConnect />
 
       <section className="mx-auto max-w-6xl px-6 pt-10">
-        <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
           <div>
-            <h1 className="text-[36px] font-semibold tracking-tight">
+            <h1 className="text-[28px] sm:text-[36px] font-semibold tracking-tight">
               ${ticker} Viral Board
             </h1>
-            <p className="text-[color:var(--color-fg-muted)]">
+            <p className="text-[color:var(--color-fg-muted)] text-sm sm:text-base">
               Top 100 creators by engagement on X • Updates every 60s
             </p>
           </div>
 
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-wrap gap-1.5 items-center">
             <button
               onClick={() => setQualityFilter(!qualityFilter)}
-              className={`rounded-full px-3 py-1 text-xs border ${qualityFilter ? 'bg-[color:var(--color-accent)] text-white border-[color:var(--color-accent)]' : 'border-[color:var(--color-border)]'}`}
+              className={`rounded-full px-3 py-1.5 text-xs min-h-[36px] border ${qualityFilter ? 'bg-[color:var(--color-accent)] text-white border-[color:var(--color-accent)]' : 'border-[color:var(--color-border)]'}`}
             >
-              {qualityFilter ? '✓ Quality filter on' : 'Quality filter'}
+              {qualityFilter ? '✓ Quality on' : 'Quality filter'}
             </button>
             <button
               onClick={() => handleAirdropTop(10)}
-              className="rounded-full bg-[color:var(--color-accent)] px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+              className="rounded-full bg-[color:var(--color-accent)] px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-white hover:brightness-110 min-h-[36px]"
             >
               Airdrop top 10 →
             </button>
             <button
               onClick={() => handleAirdropTop(25)}
-              className="rounded-full border border-[color:var(--color-border)] px-4 py-2 text-sm hover:bg-[color:var(--color-bg-elev)]"
+              className="rounded-full border border-[color:var(--color-border)] px-3.5 py-1.5 text-xs sm:text-sm hover:bg-[color:var(--color-bg-elev)] min-h-[36px]"
             >
-              Airdrop top 25 →
+              Top 25 →
             </button>
             <button
               onClick={() => setIsPolling(!isPolling)}
-              className="rounded-full border px-3 py-1 text-xs"
+              className="rounded-full border px-3 py-1.5 text-xs min-h-[36px]"
             >
-              {isPolling ? "Pause live" : "Resume live"}
+              {isPolling ? "Pause" : "Live"}
             </button>
           </div>
         </div>
@@ -272,55 +288,55 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
           </div>
         ) : (
           <>
-            <div className="overflow-hidden rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev)]">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-2 px-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev)]">
+              <table className="w-full text-sm min-w-[520px] sm:min-w-0">
                 <thead className="border-b border-[color:var(--color-border)] bg-[color:var(--color-bg-elev-2)] text-left text-[color:var(--color-fg-dim)]">
                   <tr>
-                    <th className="px-4 py-3 w-10">Rank</th>
-                    <th className="px-4 py-3">Creator</th>
-                    <th className="px-4 py-3 text-right">Impressions</th>
-                    <th className="px-4 py-3 text-right">Score</th>
-                    <th className="px-4 py-3 text-right">Followers</th>
-                    <th className="px-4 py-3">Wallet</th>
-                    <th className="px-4 py-3 w-28">Action</th>
+                    <th className="px-3 py-3 w-8 sm:w-10 text-xs sm:text-sm">Rank</th>
+                    <th className="px-3 py-3">Creator</th>
+                    <th className="px-3 py-3 text-right text-xs sm:text-sm">Impr.</th>
+                    <th className="px-3 py-3 text-right hidden sm:table-cell text-xs sm:text-sm">Score</th>
+                    <th className="px-3 py-3 text-right hidden md:table-cell text-xs sm:text-sm">Followers</th>
+                    <th className="px-3 py-3 text-xs sm:text-sm">Wallet</th>
+                    <th className="px-3 py-3 w-20 sm:w-28">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[color:var(--color-border)]">
                   {displayAuthors.map((a, idx) => (
                     <tr key={a.handle} className="hover:bg-[color:var(--color-bg-elev-2)]">
-                      <td className="px-4 py-3 font-mono text-[color:var(--color-fg-dim)]">
+                      <td className="px-3 py-3 font-mono text-[color:var(--color-fg-dim)] text-xs sm:text-sm">
                         {String(idx + 1).padStart(2, "0")}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <div className="flex items-center gap-2">
                           {a.profilePicture ? (
-                            <img src={a.profilePicture} alt="" className="w-7 h-7 rounded-full object-cover" />
+                            <img src={a.profilePicture} alt="" className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover" />
                           ) : (
-                            <div className="w-7 h-7 rounded-full bg-[color:var(--color-bg-elev-2)]" />
+                            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-[color:var(--color-bg-elev-2)]" />
                           )}
-                          <div>
+                          <div className="min-w-0">
                             <a
                               href={`https://x.com/${a.handle}`}
                               target="_blank"
                               rel="noreferrer"
-                              className="font-semibold hover:underline"
+                              className="font-semibold hover:underline text-sm"
                             >
                               {a.name || `@${a.handle}`}
                             </a>
-                            <div className="text-[11px] text-[color:var(--color-fg-dim)]">@{a.handle}</div>
+                            <div className="text-[10px] sm:text-[11px] text-[color:var(--color-fg-dim)]">@{a.handle}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono tabular">
+                      <td className="px-3 py-3 text-right font-mono tabular text-xs sm:text-sm">
                         {compactNumber(a.bestTweet.views || 0)}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono tabular">
+                      <td className="px-3 py-3 text-right font-mono tabular hidden sm:table-cell text-xs sm:text-sm">
                         {a.score.toFixed(1)}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono tabular text-[color:var(--color-fg-dim)]">
+                      <td className="px-3 py-3 text-right font-mono tabular text-[color:var(--color-fg-dim)] hidden md:table-cell text-xs sm:text-sm">
                         {compactNumber(a.followers)}
                       </td>
-                      <td className="px-4 py-3 font-mono text-[11px] text-[color:var(--color-accent)]">
+                      <td className="px-3 py-3 font-mono text-[10px] sm:text-[11px] text-[color:var(--color-accent)]">
                         {a.wallet ? (
                           <a
                             href={`https://solscan.io/account/${a.wallet.address}`}
@@ -328,13 +344,13 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
                             rel="noreferrer"
                             className="hover:underline"
                           >
-                            {shortAddress(a.wallet.address, 4, 4)}
+                            {shortAddress(a.wallet.address, 3, 3)}
                           </a>
                         ) : (
                           <span className="text-[color:var(--color-fg-dim)]">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         {a.wallet ? (
                           <span className="text-[10px] rounded px-2 py-0.5 bg-[color:var(--color-success)]/10 text-[color:var(--color-success)]">
                             claimed
@@ -343,9 +359,9 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
                           <button
                             onClick={() => handleClaim(a)}
                             disabled={claiming === a.handle}
-                            className="text-[11px] rounded-full border border-[color:var(--color-border)] px-3 py-1 hover:bg-[color:var(--color-accent)] hover:text-white hover:border-[color:var(--color-accent)] disabled:opacity-50"
+                            className="text-[11px] rounded-full border border-[color:var(--color-border)] px-2.5 py-1.5 min-h-[34px] hover:bg-[color:var(--color-accent)] hover:text-white hover:border-[color:var(--color-accent)] disabled:opacity-50"
                           >
-                            {claiming === a.handle ? "Signing..." : "Claim wallet"}
+                            {claiming === a.handle ? "..." : (authenticated ? "Claim" : "Login X")}
                           </button>
                         )}
                       </td>
@@ -391,58 +407,29 @@ export default function BoardPage({ params }: { params: Promise<{ ticker: string
         </div>
 
         {claimSuccess && (
-          <div className="fixed bottom-6 right-6 bg-[color:var(--color-success)] text-white px-4 py-2 rounded-xl text-sm shadow">
+          <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:w-auto bg-[color:var(--color-success)] text-white px-4 py-2 rounded-xl text-sm shadow z-50 max-w-md">
             ✅ Claim saved for @{claimSuccess}. Future airdrops will see it.
             <button onClick={() => setClaimSuccess(null)} className="ml-2">×</button>
           </div>
         )}
 
-        {/* Claim verification flow UI */}
+        {/* Claim flow UI with Privy X login */}
         {claimStep !== 'idle' && claimHandle && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[color:var(--color-bg-elev)] border border-[color:var(--color-border)] rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl z-50">
-            <h3 className="font-semibold mb-2">Claiming @{claimHandle}</h3>
+          <div className="fixed bottom-4 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto bg-[color:var(--color-bg-elev)] border border-[color:var(--color-border)] rounded-2xl p-4 sm:p-6 max-w-md w-auto sm:w-full mx-auto sm:mx-4 shadow-xl z-50">
+            <h3 className="font-semibold mb-2 text-sm sm:text-base">Claiming @{claimHandle}</h3>
 
             {claimStep === 'sign' && (
               <div>
-                <p className="text-sm text-[color:var(--color-fg-muted)] mb-3">First, sign to prove you control this wallet address.</p>
+                <p className="text-xs sm:text-sm text-[color:var(--color-fg-muted)] mb-3">
+                  Logged in as @{user?.twitter?.username} via X. Sign with your (embedded or connected) wallet to link it.
+                </p>
                 <button
-                  onClick={() => {/* already signed in handler */}}
+                  onClick={() => {/* handled in claim logic */}}
                   disabled
-                  className="w-full rounded-xl bg-[color:var(--color-accent)] px-4 py-2 text-white opacity-70"
+                  className="w-full rounded-xl bg-[color:var(--color-accent)] px-4 py-2 text-sm text-white opacity-70"
                 >
-                  Signing wallet message...
+                  Signing to confirm ownership...
                 </button>
-              </div>
-            )}
-
-            {claimStep === 'post-tweet' && verifCode && (
-              <div className="space-y-3 text-sm">
-                <p>1. Post <strong>exactly</strong> this tweet from <strong>@{claimHandle}</strong>:</p>
-                <div className="p-3 bg-[color:var(--color-bg-elev-2)] rounded font-mono text-xs break-all">
-                  Bulldropper verification for @{claimHandle}: {verifCode}
-                </div>
-                <p>2. Then click Verify below. We will search recent tweets from your account for this code.</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={verifyTweetAndClaim}
-                    disabled={claiming === claimHandle}
-                    className="flex-1 rounded-xl bg-[color:var(--color-accent)] px-4 py-2 text-white"
-                  >
-                    {claiming === claimHandle ? "Verifying..." : "I posted — Verify & Claim"}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setClaimStep('idle');
-                      setClaimHandle(null);
-                      setVerifCode('');
-                      setClaiming(null);
-                    }}
-                    className="px-4 py-2 border rounded-xl"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                <p className="text-[10px] text-[color:var(--color-fg-dim)]">This proves you control the X account (anyone claiming must post from it).</p>
               </div>
             )}
           </div>

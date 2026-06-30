@@ -19,8 +19,8 @@ export default function BoardIndex() {
     <main className="min-h-screen pb-32">
       <Nav showConnect />
 
-      <section className="mx-auto max-w-3xl px-6 pt-16">
-        <h1 className="text-[40px] font-semibold tracking-tight mb-2">Viral Boards</h1>
+      <section className="mx-auto max-w-3xl px-6 pt-10 sm:pt-16">
+        <h1 className="text-[32px] sm:text-[40px] font-semibold tracking-tight mb-2">Viral Boards</h1>
         <p className="text-[color:var(--color-fg-muted)] mb-8">
           See who is most viral on any coin tag right now. Claim your wallet or airdrop the top creators.
         </p>
@@ -31,14 +31,14 @@ export default function BoardIndex() {
             onChange={(e) => setTicker(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && go()}
             placeholder="Enter ticker e.g. ANSEM or WIF"
-            className="flex-1 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev)] px-4 py-3 font-mono text-lg outline-none"
+            className="flex-1 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev)] px-3 sm:px-4 py-3 font-mono text-base sm:text-lg outline-none"
           />
           <button
             onClick={go}
             disabled={!ticker.trim()}
-            className="rounded-xl bg-[color:var(--color-accent)] px-6 py-3 text-white font-semibold disabled:opacity-50"
+            className="rounded-xl bg-[color:var(--color-accent)] px-4 sm:px-6 py-3 text-sm sm:text-base text-white font-semibold disabled:opacity-50 whitespace-nowrap"
           >
-            Go to board →
+            Go →
           </button>
         </div>
 
@@ -58,7 +58,7 @@ export default function BoardIndex() {
         </div>
 
         <div className="mt-10 text-sm text-[color:var(--color-fg-muted)]">
-          Public boards for any cashtag. See top viral creators, their posts, claim your wallet (post a verification tweet to verify), and airdrop/tip directly.
+          Public boards for any cashtag. See top viral creators, their posts. Login with X via Privy to securely claim your handle (proves ownership), pair/link a wallet (embedded or external), then airdrop/tip the top creators directly.
         </div>
       </section>
     </main>

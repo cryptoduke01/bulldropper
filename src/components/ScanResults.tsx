@@ -107,22 +107,22 @@ export function ScanResults({ ticker, hours }: Props) {
       <StatBar stats={data.stats} label={data.label} hours={data.hours} />
 
       {/* Filtered tweet feed + quick random / preference selection (from your friends) */}
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev)] px-4 py-3">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev)] px-3 py-2.5">
         <input
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
-          placeholder="Filter feed (handle, name, or tweet text)…"
-          className="flex-1 min-w-[220px] rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev-2)] px-3 py-1.5 text-sm outline-none placeholder:text-[color:var(--color-fg-dim)]"
+          placeholder="Filter feed…"
+          className="flex-1 min-w-[160px] sm:min-w-[220px] rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-bg-elev-2)] px-3 py-1.5 text-sm outline-none placeholder:text-[color:var(--color-fg-dim)]"
         />
-        <button onClick={() => selectRandom(5)} className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[11px] hover:border-[color:var(--color-border-strong)]">random 5</button>
-        <button onClick={() => selectRandom(10)} className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[11px] hover:border-[color:var(--color-border-strong)]">random 10</button>
-        <button onClick={() => selectTop(10)} className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[11px] hover:border-[color:var(--color-border-strong)]">top 10</button>
-        <button onClick={() => setSelected(new Set())} className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[11px] hover:border-[color:var(--color-border-strong)]">clear</button>
+        <button onClick={() => selectRandom(5)} className="rounded-full border border-[color:var(--color-border)] px-2.5 py-1 text-[11px] min-h-[34px] hover:border-[color:var(--color-border-strong)]">rand 5</button>
+        <button onClick={() => selectRandom(10)} className="rounded-full border border-[color:var(--color-border)] px-2.5 py-1 text-[11px] min-h-[34px] hover:border-[color:var(--color-border-strong)]">rand 10</button>
+        <button onClick={() => selectTop(10)} className="rounded-full border border-[color:var(--color-border)] px-2.5 py-1 text-[11px] min-h-[34px] hover:border-[color:var(--color-border-strong)]">top 10</button>
+        <button onClick={() => setSelected(new Set())} className="rounded-full border border-[color:var(--color-border)] px-2.5 py-1 text-[11px] min-h-[34px] hover:border-[color:var(--color-border-strong)]">clear</button>
         <button
           onClick={toggleAll}
-          className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[11px] font-medium hover:border-[color:var(--color-border-strong)]"
+          className="rounded-full border border-[color:var(--color-border)] px-2.5 py-1 text-[11px] min-h-[34px] font-medium hover:border-[color:var(--color-border-strong)]"
         >
-          {selected.size === eligible.length ? "deselect all" : "select all w/ wallet"}
+          {selected.size === eligible.length ? "deselect" : "select all"}
         </button>
       </div>
 
@@ -153,7 +153,7 @@ export function ScanResults({ ticker, hours }: Props) {
         </ul>
       </div>
 
-      <div className="sticky bottom-6 z-20 flex items-center justify-between gap-4 rounded-2xl border border-[color:var(--color-border-strong)] bg-[color:var(--color-bg-elev)]/95 px-5 py-4 backdrop-blur">
+      <div className="sticky bottom-4 sm:bottom-6 z-20 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-2xl border border-[color:var(--color-border-strong)] bg-[color:var(--color-bg-elev)]/95 px-4 sm:px-5 py-3 sm:py-4 backdrop-blur">
         <div className="text-[13px] text-[color:var(--color-fg-muted)]">
           <span className="tabular text-[color:var(--color-fg)]">{selected.size}</span> selected
           <span className="mx-2 text-[color:var(--color-fg-dim)]">·</span>
@@ -246,7 +246,7 @@ function AuthorRow({
   const has = author.wallet !== null;
   return (
     <li
-      className={`fade-up grid grid-cols-[28px_28px_1fr_auto] items-center gap-4 px-5 py-4 transition hover:bg-[color:var(--color-bg-elev-2)] ${
+      className={`fade-up grid grid-cols-[28px_28px_1fr] sm:grid-cols-[28px_28px_1fr_auto] items-center gap-x-3 gap-y-1.5 sm:gap-4 px-4 sm:px-5 py-3 sm:py-4 transition hover:bg-[color:var(--color-bg-elev-2)] ${
         selected ? "bg-[color:var(--color-accent-soft)]/40" : ""
       }`}
       style={{ animationDelay: `${rank * 14}ms` }}
@@ -318,8 +318,8 @@ function AuthorRow({
         </div>
       </div>
 
-      <div className="flex flex-col items-end gap-1.5">
-        <div className="font-mono text-[13px] font-semibold tabular text-[color:var(--color-fg)]">
+      <div className="flex sm:flex-col items-end gap-1 sm:gap-1.5 justify-between sm:justify-start col-span-3 sm:col-span-1 mt-1 sm:mt-0">
+        <div className="font-mono text-[12px] sm:text-[13px] font-semibold tabular text-[color:var(--color-fg)]">
           {author.score.toFixed(1)}
         </div>
         {author.wallet ? (
@@ -327,13 +327,13 @@ function AuthorRow({
             href={`https://solscan.io/account/${author.wallet.address}`}
             target="_blank"
             rel="noreferrer"
-            className="font-mono text-[11px] tabular text-[color:var(--color-accent)] hover:underline"
+            className="font-mono text-[10px] sm:text-[11px] tabular text-[color:var(--color-accent)] hover:underline"
             title={author.wallet.address}
           >
-            {shortAddress(author.wallet.address, 4, 4)}
+            {shortAddress(author.wallet.address, 3, 3)}
           </a>
         ) : (
-          <span className="rounded-full border border-[color:var(--color-border)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-[color:var(--color-fg-dim)]">
+          <span className="rounded-full border border-[color:var(--color-border)] px-1.5 py-0.5 text-[9px] sm:text-[10px] font-medium uppercase tracking-[0.1em] text-[color:var(--color-fg-dim)]">
             no wallet
           </span>
         )}
